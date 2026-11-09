@@ -5,9 +5,11 @@ import Dashboard from "../pages/Dashboard";
 import Bookings from "../pages/Bookings";
 import Notifications from "../pages/Notifications";
 import BookingDetail from "../pages/BookingDetail";
+import VehicleDashboard from "../pages/VehicleDashboard";
+import AddVehicle from "../pages/Vehicles/AddVehicle";
+//import StoresDashboard from "../pages/StoresDashboard";
+//import AddStore from "../pages/Stores/AddStore";
 import { ROLES } from "../utils/roles";
-
-
 
 function ComingSoon({ title }) {
   return (
@@ -34,8 +36,10 @@ export default function AppRoutes() {
           <Route path="trip-planner" element={<ComingSoon title="Trip planning" />} />
           <Route path="schedule" element={<ComingSoon title="Schedules" />} />
           <Route path="live-map" element={<ComingSoon title="Live map" />} />
-          <Route path="vehicles" element={<ComingSoon title="Vehicles" />} />
+          <Route path="vehicles" element={<VehicleDashboard />} />
+          <Route path="vehicles/add" element={<AddVehicle />} />
           <Route path="stores" element={<ComingSoon title="Stores" />} />
+          <Route path="stores/add" element={<ComingSoon title="Add Store" />} />
           <Route path="items" element={<ComingSoon title="Items" />} />
           <Route path="users" element={<ComingSoon title="Users and roles" />} />
           <Route path="reports" element={<ComingSoon title="Reports" />} />
