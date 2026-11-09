@@ -1,16 +1,43 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom'; // Added import
+import { useNavigate } from 'react-router-dom';
+import OverrideModal from '../components/trip/OverrideModal'; 
 
 const VehicleAllocation = () => {
-  const navigate = useNavigate(); // Added hook
+  const navigate = useNavigate();
   const [allocatedVehicle, setAllocatedVehicle] = useState(null);
+  const [isOverrideModalOpen, setIsOverrideModalOpen] = useState(false);
 
+  // Dummy vehicle data passed to the modal for the override scenario
+  const manualVehicleData = {
+    id: 'WP-CA-5582',
+    type: '5T Box Truck',
+    driver: 'Sunil Fernando'
+  };
+
+  // 1. Just selects the vehicle in the UI (no redirect yet)
   const handleAllocate = (vehicleId) => {
     setAllocatedVehicle(vehicleId);
   };
 
+  // 2. Final Confirm button at the bottom of the form triggers the redirect
+  const handleFinalConfirm = () => {
+    if (!allocatedVehicle) {
+      alert("Please allocate a vehicle first before confirming.");
+      return;
+    }
+    alert(`Success: Vehicle ${allocatedVehicle} has been successfully allocated to Trip TR-0450.`);
+    navigate('/trip-planner'); 
+  };
+
+  // 3. Override confirm automatically redirects
+  const handleConfirmOverride = () => {
+    alert("Success: Manual Override confirmed. Security overrides logged.");
+    setIsOverrideModalOpen(false);
+    navigate('/trip-planner');
+  };
+
   return (
-    <div className="flex-1 flex flex-col min-w-0 bg-slate-50 p-6 overflow-auto">
+    <div className="flex-1 flex flex-col min-w-0 bg-slate-50 p-6 overflow-auto relative">
       {/* Header */}
       <div className="flex justify-between items-start mb-6">
         <div>
@@ -56,7 +83,7 @@ const VehicleAllocation = () => {
         </div>
       </div>
 
-      <div className="flex gap-6">
+      <div className="flex gap-6 h-full pb-10">
         {/* Left Column: Route & Bookings */}
         <div className="w-1/2 flex flex-col gap-6">
           
@@ -65,7 +92,6 @@ const VehicleAllocation = () => {
             <h2 className="font-semibold text-gray-800 mb-5">Planned Route</h2>
             
             <div className="relative pl-3">
-              {/* Vertical connecting line */}
               <div className="absolute left-[17.5px] top-3 bottom-6 w-0.5 bg-gray-200"></div>
               
               {/* Pickup Stop */}
@@ -110,7 +136,6 @@ const VehicleAllocation = () => {
             </div>
             
             <div className="flex flex-col gap-4">
-              {/* Booking 1 */}
               <div className="flex justify-between items-start pb-4 border-b border-gray-50">
                 <div>
                   <div className="flex items-center gap-2">
@@ -122,7 +147,6 @@ const VehicleAllocation = () => {
                 <span className="font-bold text-gray-900 text-sm">4,500 kg</span>
               </div>
 
-              {/* Booking 2 */}
               <div className="flex justify-between items-start">
                 <div>
                   <div className="flex items-center gap-2">
@@ -138,21 +162,16 @@ const VehicleAllocation = () => {
           </div>
         </div>
 
-        {/* Right Column: Recommended Vehicles */}
+        {/* Right Column: Recommended Vehicles & Final Confirmation */}
         <div className="w-1/2 bg-white rounded-lg border border-gray-200 shadow-sm flex flex-col p-5">
           <div className="flex justify-between items-start mb-5">
             <div>
               <h2 className="font-semibold text-gray-800">Recommended Vehicles</h2>
               <p className="text-xs text-gray-500 mt-0.5">Ranked by capacity, schedule compatibility, and location</p>
             </div>
-            <button className="text-gray-400 hover:text-gray-600">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
-              </svg>
-            </button>
           </div>
           
-          <div className="flex-1 flex flex-col gap-4 overflow-y-auto">
+          <div className="flex-1 flex flex-col gap-4 overflow-y-auto mb-4">
             
             {/* Vehicle 1 - 98% Match */}
             <div className={`border rounded-lg p-4 transition-colors ${allocatedVehicle === 'WP-AB-1234' ? 'border-blue-500 bg-blue-50/30' : 'border-gray-200'}`}>
@@ -184,7 +203,7 @@ const VehicleAllocation = () => {
                 {allocatedVehicle === 'WP-AB-1234' ? (
                   <button onClick={() => setAllocatedVehicle(null)} className="px-4 py-1.5 bg-green-100 text-green-700 font-bold text-xs rounded shadow-sm border border-green-200">Allocated ✓</button>
                 ) : (
-                  <button onClick={() => handleAllocate('WP-AB-1234')} className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs rounded shadow-sm transition-colors">Allocate</button>
+                  <button onClick={() => handleAllocate('WP-AB-1234')} className="px-4 py-1.5 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium text-xs rounded shadow-sm transition-colors">Allocate</button>
                 )}
               </div>
             </div>
@@ -250,18 +269,47 @@ const VehicleAllocation = () => {
                 <button disabled className="px-4 py-1.5 bg-gray-100 text-gray-400 border border-gray-200 font-medium text-xs rounded cursor-not-allowed">Allocate</button>
               </div>
             </div>
-
           </div>
 
           {/* Manual Override Action */}
-          <div className="mt-4 pt-4 border-t border-gray-100 text-center">
-            <button className="text-blue-600 hover:text-blue-700 text-sm font-medium flex items-center justify-center gap-1 w-full">
+          <div className="text-center mb-4">
+            <button 
+              onClick={() => setIsOverrideModalOpen(true)}
+              className="text-blue-600 hover:text-blue-700 text-sm font-medium flex items-center justify-center gap-1 w-full"
+            >
               <span>+</span> Select vehicle manually (Override)
+            </button>
+          </div>
+
+          {/* FINAL CONFIRMATION BAR */}
+          <div className="mt-auto pt-4 border-t border-gray-100 flex justify-end gap-3">
+            <button 
+              onClick={() => navigate('/trip-planner')} 
+              className="px-4 py-2 bg-white border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 shadow-sm transition-colors"
+            >
+              Cancel
+            </button>
+            <button 
+              onClick={handleFinalConfirm} 
+              className={`px-6 py-2 rounded-md text-sm font-bold shadow-md transition-colors ${
+                allocatedVehicle 
+                  ? 'bg-blue-600 hover:bg-blue-700 text-white' 
+                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              }`}
+            >
+              Confirm Allocation
             </button>
           </div>
 
         </div>
       </div>
+
+      <OverrideModal 
+        isOpen={isOverrideModalOpen} 
+        onClose={() => setIsOverrideModalOpen(false)}
+        onConfirm={handleConfirmOverride} 
+        vehicle={manualVehicleData} 
+      />
     </div>
   );
 };
