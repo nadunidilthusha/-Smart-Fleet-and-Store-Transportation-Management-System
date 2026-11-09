@@ -7,6 +7,7 @@ import Notifications from "../pages/Notifications";
 import BookingDetail from "../pages/BookingDetail";
 import VehicleDashboard from "../pages/VehicleDashboard";
 import AddVehicle from "../pages/Vehicles/AddVehicle";
+import TripPlanner from "../pages/TripPlanner"; // Added your import
 //import StoresDashboard from "../pages/StoresDashboard";
 //import AddStore from "../pages/Stores/AddStore";
 import { ROLES } from "../utils/roles";
@@ -33,7 +34,10 @@ export default function AppRoutes() {
           <Route path="bookings" element={<Bookings />} />
           <Route path="bookings/:id" element={<BookingDetail />} />
           <Route path="trips" element={<ComingSoon title="Trips" />} />
-          <Route path="trip-planner" element={<ComingSoon title="Trip planning" />} />
+          
+          {/* Replaced the placeholder with your actual component */}
+          <Route path="trip-planner" element={<TripPlanner />} />
+          
           <Route path="schedule" element={<ComingSoon title="Schedules" />} />
           <Route path="live-map" element={<ComingSoon title="Live map" />} />
           <Route path="vehicles" element={<VehicleDashboard />} />
