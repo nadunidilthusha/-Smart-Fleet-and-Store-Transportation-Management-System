@@ -1,1 +1,23 @@
 @import "tailwindcss";
+
+/* Shared FleetLine theme tokens used by Tailwind utility classes */
+@theme {
+  --color-page: #f4f6f9;
+  --color-ink: #0f172a;
+  --color-mute: #64748b;
+  --color-line: #e2e8f0;
+  --color-brand: #2563eb;
+  --color-ok: #16a34a;
+  --color-warn: #f59e0b;
+  --color-bad: #dc2626;
+  --color-side: #0b1b33;
+  --color-side-hover: #132744;
+  --color-side-active: #1a3558;
+}
+
+body {
+  margin: 0;
+  color: var(--color-ink);
+  background: var(--color-page);
+  font-family: "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+}
