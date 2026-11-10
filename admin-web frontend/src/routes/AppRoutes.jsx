@@ -14,6 +14,7 @@ import LiveMap from "../pages/LiveMap";
 import VehicleAllocation from "../pages/VehicleAllocation";
 import { ROLES } from "../utils/roles";
 import AddStore from "../pages/Stores/AddStore";
+import StoresDashboard from "../pages/StoresDashboard";
 
 function ComingSoon({ title }) {
   return (
@@ -47,7 +48,7 @@ export default function AppRoutes() {
           
           <Route path="vehicles" element={<VehicleDashboard />} />
           <Route path="vehicles/add" element={<AddVehicle />} />
-          <Route path="stores" element={<ComingSoon title="Stores" />} />
+          <Route path="stores" element={<StoresDashboard />} />
           <Route path="stores/add" element={<AddStore/>} />
           <Route path="items" element={<ComingSoon title="Items" />} />
           <Route path="users" element={<ComingSoon title="Users and roles" />} />
