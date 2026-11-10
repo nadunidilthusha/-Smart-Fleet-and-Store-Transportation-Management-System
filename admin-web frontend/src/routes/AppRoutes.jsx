@@ -8,13 +8,10 @@ import BookingDetail from "../pages/BookingDetail";
 import VehicleDashboard from "../pages/VehicleDashboard";
 import AddVehicle from "../pages/Vehicles/AddVehicle";
 import TripPlannerList from "../pages/TripPlannerList";
-import TripPlannerCreate from "../pages/TripPlannerCreate";
+import TripPlanner from "../pages/TripPlanner"; // <-- Now using the unified master screen
 import Schedule from "../pages/Schedule";
 import LiveMap from "../pages/LiveMap";
-import VehicleAllocation from "../pages/VehicleAllocation";
 import { ROLES } from "../utils/roles";
-import AddStore from "../pages/Stores/AddStore";
-import StoresDashboard from "../pages/StoresDashboard";
 
 function ComingSoon({ title }) {
   return (
@@ -38,18 +35,18 @@ export default function AppRoutes() {
           <Route path="bookings/:id" element={<BookingDetail />} />
           <Route path="trips" element={<ComingSoon title="Trips" />} />
           
-          {/* UPDATED TRIP PLANNER ROUTES */}
+          {/* CLEANED UP TRIP PLANNER ROUTES */}
           <Route path="trip-planner" element={<TripPlannerList />} />
-          <Route path="trip-planner/new" element={<TripPlannerCreate />} />
-          <Route path="allocation" element={<VehicleAllocation />} />
+          <Route path="trip-planner/new" element={<TripPlanner />} /> 
+          {/* Removed the /allocation route! */}
           
           <Route path="schedule" element={<Schedule />} />
           <Route path="live-map" element={<LiveMap />} />
           
           <Route path="vehicles" element={<VehicleDashboard />} />
           <Route path="vehicles/add" element={<AddVehicle />} />
-          <Route path="stores" element={<StoresDashboard />} />
-          <Route path="stores/add" element={<AddStore/>} />
+          <Route path="stores" element={<ComingSoon title="Stores" />} />
+          <Route path="stores/add" element={<ComingSoon title="Add Store" />} />
           <Route path="items" element={<ComingSoon title="Items" />} />
           <Route path="users" element={<ComingSoon title="Users and roles" />} />
           <Route path="reports" element={<ComingSoon title="Reports" />} />
