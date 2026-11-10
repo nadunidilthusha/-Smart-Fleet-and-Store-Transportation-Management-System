@@ -2,6 +2,9 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import ProtectedRoute from "./ProtectedRoute";
 import MainLayout from "../layouts/MainLayout";
 import Dashboard from "../pages/Dashboard";
+import Bookings from "../pages/Bookings";
+import CreateBooking from "../pages/CreateBooking";
+import BookingDetail from "../pages/BookingDetail";
 import { ROLES } from "../utils/roles";
 
 function ComingSoon({ title }) {
@@ -27,9 +30,9 @@ export default function AppRoutes() {
         <Route element={<MainLayout />}>
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
-          <Route path="bookings" element={<ComingSoon title="Bookings" />} />
-          <Route path="bookings/new" element={<ComingSoon title="New booking" />} />
-          <Route path="bookings/:id" element={<ComingSoon title="Booking detail" />} />
+          <Route path="bookings" element={<Bookings />} />
+          <Route path="bookings/new" element={<CreateBooking />} />
+          <Route path="bookings/:id" element={<BookingDetail />} />
           <Route path="schedule" element={<ComingSoon title="Store schedule" />} />
           <Route path="trip-progress" element={<ComingSoon title="Trip progress" />} />
           <Route path="goods-confirmation" element={<ComingSoon title="Goods confirmation" />} />

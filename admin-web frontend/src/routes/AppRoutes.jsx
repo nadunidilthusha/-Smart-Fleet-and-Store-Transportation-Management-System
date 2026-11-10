@@ -7,8 +7,11 @@ import Notifications from "../pages/Notifications";
 import BookingDetail from "../pages/BookingDetail";
 import VehicleDashboard from "../pages/VehicleDashboard";
 import AddVehicle from "../pages/Vehicles/AddVehicle";
-//import StoresDashboard from "../pages/StoresDashboard";
-//import AddStore from "../pages/Stores/AddStore";
+import TripPlannerList from "../pages/TripPlannerList";
+import TripPlannerCreate from "../pages/TripPlannerCreate";
+import Schedule from "../pages/Schedule";
+import LiveMap from "../pages/LiveMap";
+import VehicleAllocation from "../pages/VehicleAllocation";
 import { ROLES } from "../utils/roles";
 
 function ComingSoon({ title }) {
@@ -23,7 +26,6 @@ function ComingSoon({ title }) {
 export default function AppRoutes() {
   return (
     <Routes>
-      {/* Replace with <Login /> from ../pages/Login when it is ready */}
       <Route path="/login" element={<ComingSoon title="Login" />} />
 
       <Route element={<ProtectedRoute allowedRoles={[ROLES.SYSTEM_ADMIN]} />}>
@@ -33,9 +35,15 @@ export default function AppRoutes() {
           <Route path="bookings" element={<Bookings />} />
           <Route path="bookings/:id" element={<BookingDetail />} />
           <Route path="trips" element={<ComingSoon title="Trips" />} />
-          <Route path="trip-planner" element={<ComingSoon title="Trip planning" />} />
-          <Route path="schedule" element={<ComingSoon title="Schedules" />} />
-          <Route path="live-map" element={<ComingSoon title="Live map" />} />
+          
+          {/* UPDATED TRIP PLANNER ROUTES */}
+          <Route path="trip-planner" element={<TripPlannerList />} />
+          <Route path="trip-planner/new" element={<TripPlannerCreate />} />
+          <Route path="allocation" element={<VehicleAllocation />} />
+          
+          <Route path="schedule" element={<Schedule />} />
+          <Route path="live-map" element={<LiveMap />} />
+          
           <Route path="vehicles" element={<VehicleDashboard />} />
           <Route path="vehicles/add" element={<AddVehicle />} />
           <Route path="stores" element={<ComingSoon title="Stores" />} />
