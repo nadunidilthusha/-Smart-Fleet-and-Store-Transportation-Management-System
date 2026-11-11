@@ -1,4 +1,4 @@
-// Shared section header with icon, title, and subtitle for Add Item cards
+// Shared section header with icons, title, and subtitle for Add Item cards
 
 export default function SectionHeader({ icon, title, subtitle }) {
   return (
