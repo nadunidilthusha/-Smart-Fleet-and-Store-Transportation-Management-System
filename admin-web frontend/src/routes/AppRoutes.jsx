@@ -12,6 +12,11 @@ import TripPlanner from "../pages/TripPlanner"; // <-- Now using the unified mas
 import Schedule from "../pages/Schedule";
 import LiveMap from "../pages/LiveMap";
 import { ROLES } from "../utils/roles";
+import StoresDashboard from "../pages/StoresDashboard";
+import AddStore from "../pages/Stores/AddStore";
+import ItemsDashboard from "../pages/ItemsDashboard";
+import AddItem from "../pages/Items/AddItem";
+
 
 function ComingSoon({ title }) {
   return (
@@ -34,20 +39,22 @@ export default function AppRoutes() {
           <Route path="bookings" element={<Bookings />} />
           <Route path="bookings/:id" element={<BookingDetail />} />
           <Route path="trips" element={<ComingSoon title="Trips" />} />
-          
+
           {/* CLEANED UP TRIP PLANNER ROUTES */}
           <Route path="trip-planner" element={<TripPlannerList />} />
-          <Route path="trip-planner/new" element={<TripPlanner />} /> 
+          <Route path="trip-planner/new" element={<TripPlanner />} />
           {/* Removed the /allocation route! */}
-          
+
           <Route path="schedule" element={<Schedule />} />
           <Route path="live-map" element={<LiveMap />} />
-          
+
           <Route path="vehicles" element={<VehicleDashboard />} />
           <Route path="vehicles/add" element={<AddVehicle />} />
-          <Route path="stores" element={<ComingSoon title="Stores" />} />
-          <Route path="stores/add" element={<ComingSoon title="Add Store" />} />
-          <Route path="items" element={<ComingSoon title="Items" />} />
+          <Route path="stores" element={<StoresDashboard />} />
+          <Route path="stores/add" element={<AddStore />} />
+
+          <Route path="items" element={<ItemsDashboard />} />
+          <Route path="items/add" element={<AddItem />} />
           <Route path="users" element={<ComingSoon title="Users and roles" />} />
           <Route path="reports" element={<ComingSoon title="Reports" />} />
           <Route path="audit-log" element={<ComingSoon title="Audit log" />} />
