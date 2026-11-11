@@ -5,6 +5,8 @@ import Dashboard from "../pages/Dashboard";
 import Bookings from "../pages/Bookings";
 import CreateBooking from "../pages/CreateBooking";
 import BookingDetail from "../pages/BookingDetail";
+import TripProgressList from "../pages/TripProgressList";
+import TripProgressDetail from "../pages/TripProgressDetail";
 import { ROLES } from "../utils/roles";
 
 function ComingSoon({ title }) {
@@ -19,7 +21,6 @@ function ComingSoon({ title }) {
 export default function AppRoutes() {
   return (
     <Routes>
-      {/* Replace with <Login /> from ../pages/Login when it is ready */}
       <Route path="/login" element={<ComingSoon title="Login" />} />
 
       <Route
@@ -34,7 +35,11 @@ export default function AppRoutes() {
           <Route path="bookings/new" element={<CreateBooking />} />
           <Route path="bookings/:id" element={<BookingDetail />} />
           <Route path="schedule" element={<ComingSoon title="Store schedule" />} />
-          <Route path="trip-progress" element={<ComingSoon title="Trip progress" />} />
+          
+          {/* Fixed Routing Structure */}
+          <Route path="trip-progress" element={<TripProgressList />} />
+          <Route path="trip-progress/:id" element={<TripProgressDetail />} />
+          
           <Route path="goods-confirmation" element={<ComingSoon title="Goods confirmation" />} />
           <Route path="notifications" element={<ComingSoon title="Notifications" />} />
           <Route path="*" element={<ComingSoon title="Page not found" />} />
