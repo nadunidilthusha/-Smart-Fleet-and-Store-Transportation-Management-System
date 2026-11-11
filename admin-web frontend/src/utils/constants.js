@@ -1,4 +1,3 @@
-
 // Authentication storage keys
 export const TOKEN_KEY = "token";
 export const USER_KEY = "user";
@@ -57,7 +56,13 @@ export function getPageTitle(pathname) {
     ["/dashboard", "Dashboard"],
     ["/bookings", "Bookings"],
     ["/trips", "Trips"],
+    
+    // --- ADDED MISSING ROUTES HERE ---
+    ["/trip-planner/new", "Trip Planning / New"], 
     ["/trip-planner", "Trip Planning"],
+    ["/allocation", "Trip Planning / Allocation"],
+    // ---------------------------------
+    
     ["/schedule", "Schedule"],
     ["/live-map", "Live Map"],
     ["/vehicles", "Vehicles"],
