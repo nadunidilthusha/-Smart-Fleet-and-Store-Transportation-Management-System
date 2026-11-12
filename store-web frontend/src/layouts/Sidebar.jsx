@@ -1,10 +1,11 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
 import {
   Calendar,
   CheckSquare,
   ChevronDown,
   ClipboardList,
   LayoutDashboard,
+  LogOut,
   Route,
   Truck,
 } from "lucide-react";
@@ -22,7 +23,20 @@ const ICONS = {
 };
 
 export default function Sidebar() {
-  const { user } = useAuth();
+  const { user, logout, can } = useAuth();
+  const navigate = useNavigate();
+
+  // Keep only nav items the signed-in store role is allowed to open
+  const visibleGroups = NAV_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => !item.permission || can(item.permission)),
+  })).filter((group) => group.items.length > 0);
+
+  // End the session and return to the store login page
+  const handleLogout = () => {
+    logout();
+    navigate("/login", { replace: true });
+  };
 
   return (
     <aside className="flex w-59 shrink-0 flex-col bg-side px-2.5 py-3.5">
@@ -43,7 +57,7 @@ export default function Sidebar() {
       </button>
 
       <nav className="flex-1 overflow-y-auto">
-        {NAV_GROUPS.map((group) => (
+        {visibleGroups.map((group) => (
           <div key={group.label ?? "main"}>
             {group.label && (
               <p className="px-2.5 pb-1.5 pt-4.5 text-xs text-[#8aa0c4]">{group.label}</p>
@@ -71,13 +85,23 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      <div className="flex items-center gap-2.5 border-t border-white/10 px-2.5 pt-3">
-        <span className="grid h-7.5 w-7.5 shrink-0 place-items-center rounded-full bg-[#2f5c9f] text-xs font-semibold text-white">
-          {getInitials(user?.name)}
-        </span>
-        <div className="min-w-0 leading-tight">
-          <p className="truncate text-sm font-medium text-slate-100">{user?.name}</p>
-          <p className="truncate text-xs text-[#9db2d3]">{ROLE_LABELS[user?.role] ?? ""}</p>
+      <div className="border-t border-white/10 px-2.5 pt-3">
+        <div className="flex items-center gap-2.5">
+          <span className="grid h-7.5 w-7.5 shrink-0 place-items-center rounded-full bg-[#2f5c9f] text-xs font-semibold text-white">
+            {getInitials(user?.name)}
+          </span>
+          <div className="min-w-0 flex-1 leading-tight">
+            <p className="truncate text-sm font-medium text-slate-100">{user?.name}</p>
+            <p className="truncate text-xs text-[#9db2d3]">{ROLE_LABELS[user?.role] ?? ""}</p>
+          </div>
+          <button
+            type="button"
+            aria-label="Sign out"
+            onClick={handleLogout}
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-md text-[#9db2d3] transition hover:bg-white/10 hover:text-white"
+          >
+            <LogOut size={15} strokeWidth={1.8} />
+          </button>
         </div>
       </div>
     </aside>

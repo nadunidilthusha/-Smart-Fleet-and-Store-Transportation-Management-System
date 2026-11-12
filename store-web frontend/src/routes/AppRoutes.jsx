@@ -7,7 +7,8 @@ import CreateBooking from "../pages/CreateBooking";
 import BookingDetail from "../pages/BookingDetail";
 import TripProgressList from "../pages/TripProgressList";
 import TripProgressDetail from "../pages/TripProgressDetail";
-import { ROLES } from "../utils/roles";
+import { PERMISSIONS, ROLES } from "../utils/roles";
+import Login from "../pages/Login";
 
 function ComingSoon({ title }) {
   return (
@@ -21,7 +22,7 @@ function ComingSoon({ title }) {
 export default function AppRoutes() {
   return (
     <Routes>
-      <Route path="/login" element={<ComingSoon title="Login" />} />
+      <Route path="/login" element={<Login />} />
 
       <Route
         element={
@@ -31,7 +32,7 @@ export default function AppRoutes() {
         <Route element={<MainLayout />}>
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
-          <Route path="bookings" element={<Bookings />} />
+          
           <Route path="bookings/new" element={<CreateBooking />} />
           <Route path="bookings/:id" element={<BookingDetail />} />
           <Route path="schedule" element={<ComingSoon title="Store schedule" />} />
@@ -39,6 +40,13 @@ export default function AppRoutes() {
           {/* Fixed Routing Structure */}
           <Route path="trip-progress" element={<TripProgressList />} />
           <Route path="trip-progress/:id" element={<TripProgressDetail />} />
+
+           {/* Booking management is limited to store managers */}
+          <Route element={<ProtectedRoute permission={PERMISSIONS.MANAGE_BOOKINGS} />}>
+            <Route path="bookings" element={<Bookings />} />
+            <Route path="bookings/new" element={<CreateBooking />} />
+            <Route path="bookings/:id" element={<BookingDetail />} />
+          </Route>
           
           <Route path="goods-confirmation" element={<ComingSoon title="Goods confirmation" />} />
           <Route path="notifications" element={<ComingSoon title="Notifications" />} />
