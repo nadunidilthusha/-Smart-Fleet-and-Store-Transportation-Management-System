@@ -1,3 +1,6 @@
+import { PERMISSIONS } from "./roles";
+
+
 // Authentication storage keys
 export const TOKEN_KEY = "store_token";
 export const USER_KEY = "store_user";
@@ -11,18 +14,45 @@ export const APP_VERSION = "1.0";
 export const NAV_GROUPS = [
   {
     label: null,
-    items: [{ label: "Dashboard", to: "/dashboard", icon: "dashboard" }],
+    items: [
+      { label: "Dashboard", 
+        to: "/dashboard", 
+        icon: "dashboard",
+        permission: PERMISSIONS.VIEW_DASHBOARD,
+      }
+    ],
   },
   {
     label: "BOOKINGS",
-    items: [{ label: "Bookings", to: "/bookings", icon: "bookings" }],
+    items: [
+      { label: "Bookings", 
+        to: "/bookings", 
+        icon: "bookings",
+        permission: PERMISSIONS.MANAGE_BOOKINGS,
+      }
+    ],
   },
   {
     label: "OPERATIONS",
     items: [
-      { label: "Store schedule", to: "/schedule", icon: "schedule" },
-      { label: "Trip progress", to: "/trip-progress", icon: "trips" },
-      { label: "Goods confirmation", to: "/goods-confirmation", icon: "items" },
+      { 
+        label: "Store schedule", 
+        to: "/schedule", 
+        icon: "schedule",
+        permission: PERMISSIONS.VIEW_SCHEDULE,
+      },
+      { 
+        label: "Trip progress", 
+        to: "/trip-progress", 
+        icon: "trips",
+        permission: PERMISSIONS.VIEW_TRIP_PROGRESS,
+      },
+      { 
+        label: "Goods confirmation", 
+        to: "/goods-confirmation", 
+        icon: "items",
+        permission: PERMISSIONS.CONFIRM_GOODS,
+      },
     ],
   },
 ];
