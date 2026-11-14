@@ -9,6 +9,8 @@ import TripProgressList from "../pages/TripProgressList";
 import TripProgressDetail from "../pages/TripProgressDetail";
 import { PERMISSIONS, ROLES } from "../utils/roles";
 import Login from "../pages/Login";
+import GoodsConfirmation from "../pages/GoodsConfirmation";
+
 
 function ComingSoon({ title }) {
   return (
@@ -48,7 +50,7 @@ export default function AppRoutes() {
             <Route path="bookings/:id" element={<BookingDetail />} />
           </Route>
           
-          <Route path="goods-confirmation" element={<ComingSoon title="Goods confirmation" />} />
+          <Route path="goods-confirmation" element={<GoodsConfirmation />} />
           <Route path="notifications" element={<ComingSoon title="Notifications" />} />
           <Route path="*" element={<ComingSoon title="Page not found" />} />
         </Route>
