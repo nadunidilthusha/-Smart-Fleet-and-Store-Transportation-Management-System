@@ -1,10 +1,20 @@
 import mongoose from "mongoose";
 import toJSON from "../../utils/toJSONPlugin.js";
 
-// Fields the frontend uses (store-web src/api/confirmationApi.js):
-//   trip (ref Trip), store (ref Store), lines[{ item, expected, received, damaged }], status (draft | confirmed), confirmedBy (ref User), confirmedAt, notes
-// TODO: replace the empty schema with real fields, types and indexes.
-const schema = new mongoose.Schema({}, { timestamps: true });
+const schema = new mongoose.Schema({
+  trip: { type: mongoose.Schema.Types.ObjectId, ref: 'Trip', required: true },
+  store: { type: mongoose.Schema.Types.ObjectId, ref: 'Store', required: true },
+  lines: [{
+    item: { type: mongoose.Schema.Types.ObjectId, ref: 'Item' },
+    expected: { type: Number },
+    received: { type: Number },
+    damaged: { type: Number, default: 0 }
+  }],
+  status: { type: String, enum: ['draft', 'confirmed'], default: 'draft' },
+  confirmedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  confirmedAt: { type: Date },
+  notes: { type: String }
+}, { timestamps: true });
 
 schema.plugin(toJSON);
 
