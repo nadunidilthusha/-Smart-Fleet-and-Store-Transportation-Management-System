@@ -1,11 +1,23 @@
 import mongoose from "mongoose";
 import toJSON from "../../utils/toJSONPlugin.js";
 
-// Fields the frontend uses (admin-web src/api/itemApi.js):
-//   code (ITM-1029), name, category, unit, store, weightKg, volumeM3, stockOnHand, stockUnit, reorderLevel, status, criticalHighSpec, stackable
-// TODO: replace the empty schema with real fields, types and indexes.
-const schema = new mongoose.Schema({}, { timestamps: true });
+const schema = new mongoose.Schema({
+  code: { type: String, required: true, unique: true }, // e.g. ITM-1029
+  name: { type: String, required: true, trim: true },
+  category: { type: String, required: true },
+  unit: { type: String, required: true }, // for bookings (e.g., 'bag')
+  store: { type: mongoose.Schema.Types.ObjectId, ref: 'Store' }, // Storage Hub
+  weightKg: { type: Number },
+  volumeM3: { type: Number },
+  stockOnHand: { type: Number, default: 0 },
+  stockUnit: { type: String },
+  reorderLevel: { type: Number, default: 0 },
+  status: { type: String, enum: ['In Stock', 'Low Stock', 'Critical Low', 'Reorder Soon'], default: 'In Stock' },
+  criticalHighSpec: { type: Boolean, default: false },
+  stackable: { type: Boolean, default: true }
+}, { timestamps: true });
 
+schema.index({ code: 1 }, { unique: true });
 schema.plugin(toJSON);
 
 export default mongoose.model("Item", schema);
