@@ -1,10 +1,15 @@
 import mongoose from "mongoose";
 import toJSON from "../../utils/toJSONPlugin.js";
 
-// Fields the frontend uses (admin-web and store-web src/api/notificationApi.js):
-//   type, severity (see config/constants.js), title, message, link, read, recipient (role / store / user), createdAt
-// TODO: replace the empty schema with real fields, types and indexes.
-const schema = new mongoose.Schema({}, { timestamps: true });
+const schema = new mongoose.Schema({
+  type: { type: String, required: true }, // booking, trip, vehicle, system
+  severity: { type: String, enum: ['info', 'warning', 'critical'], default: 'info' },
+  title: { type: String, required: true },
+  message: { type: String, required: true },
+  link: { type: String },
+  read: { type: Boolean, default: false },
+  recipient: { type: String } // Role, store ID, or user ID
+}, { timestamps: true });
 
 schema.plugin(toJSON);
 

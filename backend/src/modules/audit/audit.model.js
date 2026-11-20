@@ -1,11 +1,16 @@
 import mongoose from "mongoose";
 import toJSON from "../../utils/toJSONPlugin.js";
 
-// Fields the frontend uses (admin-web src/api/auditApi.js):
-//   actor (ref User), action, entity, entityId, details, ip, createdAt
-// TODO: replace the empty schema with real fields, types and indexes.
-const schema = new mongoose.Schema({}, { timestamps: true });
+const schema = new mongoose.Schema({
+  actor: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  action: { type: String, required: true }, // e.g. "CREATE_BOOKING"
+  entity: { type: String, required: true }, // e.g. "Booking"
+  entityId: { type: mongoose.Schema.Types.ObjectId, required: true },
+  details: { type: mongoose.Schema.Types.Mixed }, // JSON object of changes
+  ip: { type: String }
+}, { timestamps: true });
 
+schema.index({ entity: 1, entityId: 1 });
 schema.plugin(toJSON);
 
 export default mongoose.model("AuditLog", schema);

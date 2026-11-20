@@ -1,10 +1,26 @@
 import mongoose from "mongoose";
 import toJSON from "../../utils/toJSONPlugin.js";
 
-// Fields the frontend uses (admin-web TripPlanner and Trips pages; store-web TripProgress pages):
-//   code (TR-0412, use nextCode), route / stops, vehicle (ref Vehicle), driver (ref User), bookings[] (ref Booking), load %, status, nextStop, delayMinutes, waybill
-// TODO: replace the empty schema with real fields, types and indexes.
-const schema = new mongoose.Schema({}, { timestamps: true });
+const schema = new mongoose.Schema({
+  code: { type: String, required: true, unique: true }, // TR-0412
+  route: { type: String }, // String summary e.g. "Main Store → Ja-Ela → Kandy"
+  stops: [{
+    store: { type: mongoose.Schema.Types.ObjectId, ref: 'Store' },
+    sequence: Number,
+    status: { type: String, enum: ['Pending', 'Arrived', 'Completed'], default: 'Pending' }
+  }],
+  vehicle: { type: mongoose.Schema.Types.ObjectId, ref: 'Vehicle' },
+  driver: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  bookings: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Booking' }],
+  load: { type: Number, default: 0 }, // Percentage
+  status: { type: String, enum: ['Scheduled', 'In transit', 'Delayed', 'Completed', 'Unallocated'], default: 'Scheduled' },
+  nextStop: { type: String },
+  delayMinutes: { type: Number, default: 0 },
+  waybill: { type: String }
+}, { timestamps: true });
+
+schema.index({ code: 1 }, { unique: true });
+schema.index({ status: 1, createdAt: -1 });
 
 schema.plugin(toJSON, { codeAsId: true });
 

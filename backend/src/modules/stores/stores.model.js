@@ -1,11 +1,22 @@
 import mongoose from "mongoose";
 import toJSON from "../../utils/toJSONPlugin.js";
 
-// Fields the frontend uses (admin-web src/api/storeApi.js):
-//   code (STR-001), name, shortName, type, manager, phone, district, assigned vehicles, usedM3, capacityM3, status, lowStock
-// TODO: replace the empty schema with real fields, types and indexes.
-const schema = new mongoose.Schema({}, { timestamps: true });
+const schema = new mongoose.Schema({
+  code: { type: String, required: true, unique: true }, // e.g. STR-001
+  name: { type: String, required: true, trim: true },
+  shortName: { type: String, trim: true },
+  type: { type: String, default: "Regional Store" },
+  manager: { type: String },
+  phone: { type: String },
+  district: { type: String },
+  assignedVehicles: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Vehicle' }],
+  usedM3: { type: Number, default: 0 },
+  capacityM3: { type: Number, default: 0 },
+  status: { type: String, enum: ['Active', 'High Capacity', 'Inactive'], default: 'Active' },
+  lowStock: { type: Boolean, default: false }
+}, { timestamps: true });
 
+schema.index({ code: 1 }, { unique: true });
 schema.plugin(toJSON);
 
 export default mongoose.model("Store", schema);
