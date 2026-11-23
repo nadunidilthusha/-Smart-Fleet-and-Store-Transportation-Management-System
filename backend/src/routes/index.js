@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { ROLES } from "../config/constants.js";
+import { env } from "../config/env.js";
 import protect from "../middleware/auth.js";
 import authorize from "../middleware/authorize.js";
 import healthRoutes from "./health.routes.js";
@@ -27,10 +28,12 @@ router.use("/auth", authRoutes);
 
 // ---- Admin portal: signed in + SYSTEM_ADMIN ----
 const adminOnly = [protect, authorize(ROLES.SYSTEM_ADMIN)];
+// TEMP (development only): Vehicles skip sign-in until login is built; production and test keep adminOnly. Remove once login works.
+const vehiclesGuard = env.NODE_ENV === "development" ? [] : adminOnly;
 router.use("/users", ...adminOnly, usersRoutes);             // admin-web src/api/userApi.js
 router.use("/stores", ...adminOnly, storesRoutes);           // admin-web src/api/storeApi.js
 router.use("/items", ...adminOnly, itemsRoutes);             // admin-web src/api/itemApi.js
-router.use("/vehicles", ...adminOnly, vehiclesRoutes);       // admin-web src/api/vehicleApi.js
+router.use("/vehicles", ...vehiclesGuard, vehiclesRoutes);   // admin-web src/api/vehicleApi.js
 router.use("/bookings", ...adminOnly, bookingsRoutes);       // admin-web src/api/bookingApi.js and store-web src/api/bookingApi.js
 router.use("/trips", ...adminOnly, tripsRoutes);             // admin-web TripPlanner and Trips pages; store-web TripProgress pages
 router.use("/schedule", ...adminOnly, scheduleRoutes);       // admin-web and store-web Schedule pages

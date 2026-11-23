@@ -20,7 +20,12 @@ const fieldClass = (hasError) =>
       : "border-slate-200 hover:border-slate-300",
   ].join(" ");
 
-export default function BasicVehicleDetails({ values, errors, onChange, onSuggestId }) {
+export default function BasicVehicleDetails({ values, errors, onChange, onSuggestId, idLocked = false }) {
+  // Keep a saved type/model selectable in edit mode even when it is not in the standard list
+  const typeModelOptions = VEHICLE_TYPE_MODELS.includes(values.vehicleTypeModel) || !values.vehicleTypeModel
+    ? VEHICLE_TYPE_MODELS
+    : [values.vehicleTypeModel, ...VEHICLE_TYPE_MODELS];
+
   return (
     <section>
       {/* Numbered section header with right-aligned helper copy */}
@@ -75,16 +80,18 @@ export default function BasicVehicleDetails({ values, errors, onChange, onSugges
               type="text"
               value={values.vehicleId}
               onChange={onChange}
+              readOnly={idLocked}
               placeholder="VEH-2024-089"
-              className={`${fieldClass(Boolean(errors.vehicleId))} pr-10`}
+              className={`${fieldClass(Boolean(errors.vehicleId))} pr-10 ${idLocked ? "cursor-not-allowed bg-slate-100 text-slate-500" : ""}`}
               aria-invalid={Boolean(errors.vehicleId)}
             />
             {/* Magic suggest control for the next auto ID */}
             <button
               type="button"
               onClick={onSuggestId}
+              disabled={idLocked}
               title="Suggest next Vehicle ID"
-              className="absolute inset-y-0 right-0 flex items-center px-3 text-blue-500 transition hover:text-blue-700"
+              className={`absolute inset-y-0 right-0 flex items-center px-3 text-blue-500 transition hover:text-blue-700 ${idLocked ? "invisible" : ""}`}
             >
               <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M5 3l1.5 4.5L11 9 6.5 10.5 5 15l-1.5-4.5L-1 9l4.5-1.5L5 3zm10 4l1 3 3 1-3 1-1 3-1-3-3-1 3-1 1-3zm-5 7l.8 2.2L13 17l-2.2.8L10 20l-.8-2.2L7 17l2.2-.8L10 14z" transform="translate(2 1)" />
@@ -126,7 +133,7 @@ export default function BasicVehicleDetails({ values, errors, onChange, onSugges
             aria-invalid={Boolean(errors.vehicleTypeModel)}
           >
             <option value="">Select type & model</option>
-            {VEHICLE_TYPE_MODELS.map((option) => (
+            {typeModelOptions.map((option) => (
               <option key={option} value={option}>
                 {option}
               </option>

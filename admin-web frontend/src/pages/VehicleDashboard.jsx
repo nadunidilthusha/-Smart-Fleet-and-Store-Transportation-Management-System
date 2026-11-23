@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { getVehicles } from "../api/vehicleApi";
+import { getVehicles, parseApiError } from "../api/vehicleApi";
 
 // Status tab keys used for filtering the vehicle table
 const STATUS_TABS = ["All", "Available", "In Use", "Maintenance", "Inactive"];
@@ -52,7 +52,7 @@ export default function VehicleDashboard() {
       const data = await getVehicles();
       setVehicles(Array.isArray(data) ? data : []);
     } catch (err) {
-      setError(err?.message || "Unable to load vehicles.");
+      setError(parseApiError(err, "Unable to load vehicles.").message);
       setVehicles([]);
     } finally {
       setLoading(false);
@@ -322,19 +322,20 @@ export default function VehicleDashboard() {
                 <th className="whitespace-nowrap px-4 py-3">Capacity</th>
                 <th className="whitespace-nowrap px-4 py-3">Current Location / Hub</th>
                 <th className="whitespace-nowrap px-4 py-3">Mileage / Fuel</th>
-                <th className="whitespace-nowrap px-5 py-3 sm:px-6">Status</th>
+                <th className="whitespace-nowrap px-4 py-3">Status</th>
+                <th className="whitespace-nowrap px-5 py-3 sm:px-6">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-12 text-center text-sm text-slate-500">
+                  <td colSpan={9} className="px-6 py-12 text-center text-sm text-slate-500">
                     Loading vehicles…
                   </td>
                 </tr>
               ) : error ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-12 text-center text-sm text-red-600">
+                  <td colSpan={9} className="px-6 py-12 text-center text-sm text-red-600">
                     {error}{" "}
                     <button type="button" onClick={loadVehicles} className="font-medium underline">
                       Retry
@@ -343,7 +344,7 @@ export default function VehicleDashboard() {
                 </tr>
               ) : filteredVehicles.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-12 text-center text-sm text-slate-500">
+                  <td colSpan={9} className="px-6 py-12 text-center text-sm text-slate-500">
                     No vehicles match the current filters.
                   </td>
                 </tr>
@@ -377,13 +378,21 @@ export default function VehicleDashboard() {
                           Fuel {vehicle.fuel}%
                         </p>
                       </td>
-                      <td className="whitespace-nowrap px-5 py-4 sm:px-6">
+                      <td className="whitespace-nowrap px-4 py-4">
                         <span
                           className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${statusStyle.wrap}`}
                         >
                           <span className={`h-1.5 w-1.5 rounded-full ${statusStyle.dot}`} />
                           {vehicle.status}
                         </span>
+                      </td>
+                      <td className="whitespace-nowrap px-5 py-4 sm:px-6">
+                        <Link
+                          to={`/vehicles/${encodeURIComponent(vehicle.id)}/edit`}
+                          className="text-sm font-medium text-blue-600 hover:underline"
+                        >
+                          Edit
+                        </Link>
                       </td>
                     </tr>
                   );

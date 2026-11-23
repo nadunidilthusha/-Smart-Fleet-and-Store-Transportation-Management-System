@@ -16,7 +16,6 @@ const schema = new mongoose.Schema({
   lowStock: { type: Boolean, default: false }
 }, { timestamps: true });
 
-schema.index({ code: 1 }, { unique: true });
 schema.plugin(toJSON);
 
 export default mongoose.model("Store", schema);

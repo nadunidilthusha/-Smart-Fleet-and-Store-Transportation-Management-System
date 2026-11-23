@@ -23,6 +23,7 @@ function clearSession() {
 apiClient.interceptors.request.use((config) => {
     const token = readToken();
     if (token) config.headers.Authorization = `Bearer ${token}`;
+    return config; // axios needs the config back or no request is sent
 });
 
 // Signed out or expired token: clear the session and go to the login page
