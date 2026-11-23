@@ -29,3 +29,17 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
+
+/* Print: hide the sidebar and top bar and let the page grow past the screen height */
+@media print {
+  aside,
+  header {
+    display: none !important;
+  }
+
+  .h-screen,
+  main {
+    height: auto !important;
+    overflow: visible !important;
+  }
+}
