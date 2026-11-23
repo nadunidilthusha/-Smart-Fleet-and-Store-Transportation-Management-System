@@ -27,7 +27,6 @@ schema.methods.comparePassword = async function(candidatePassword) {
   return bcrypt.compare(candidatePassword, this.passwordHash);
 };
 
-schema.index({ email: 1 }, { unique: true });
 schema.plugin(toJSON);
 
 export default mongoose.model("User", schema);

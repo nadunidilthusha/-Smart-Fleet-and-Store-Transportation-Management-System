@@ -1,6 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { createVehicle } from "../../api/vehicleApi";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import {
+  createVehicle,
+  getVehicle,
+  getVehicleFormOptions,
+  mapVehicleRecordToForm,
+  parseApiError,
+  updateVehicle,
+} from "../../api/vehicleApi";
 import BasicVehicleDetails from "./BasicVehicleDetails";
 import AssignmentAndInitialStatus from "./AssignmentAndInitialStatus";
 import MaintenanceAndRegistration from "./MaintenanceAndRegistration";
@@ -12,8 +19,8 @@ const INITIAL_FORM = {
   plateNumber: "",
   vehicleTypeModel: "Isuzu NPR 75 (Light Truck)",
   capacityKg: "3500",
-  assignedDriver: "drv-042",
-  currentHub: "biyagama",
+  assignedDriver: "",
+  currentHub: "",
   initialMileage: "12450",
   fuelLevel: 85,
   operationalStatus: "available",
@@ -29,7 +36,15 @@ const outlineBtn =
 const primaryBtn =
   "inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-blue-400";
 
+// Add Vehicle form; the same form is reused for editing at /vehicles/:id/edit
 export default function AddVehicle() {
+  // Vehicle code from the URL when editing (undefined when adding)
+  const { id: editId } = useParams();
+  const isEdit = Boolean(editId);
+  // While editing, wait for the saved vehicle before showing the form
+  const [isLoading, setIsLoading] = useState(isEdit);
+  // Whether the vehicle being edited is still a draft (keeps the Save as Draft button available)
+  const [wasDraft, setWasDraft] = useState(false);
   // Hold the full form payload in one controlled state object
   const [formData, setFormData] = useState(INITIAL_FORM);
   // Track per-field validation messages after submit or live clear
@@ -38,6 +53,9 @@ export default function AddVehicle() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   // Surface a short success banner after a valid local submit
   const [submitSuccess, setSubmitSuccess] = useState("");
+  // Driver and hub dropdown options loaded from GET /vehicles/form-options
+  const [driverOptions, setDriverOptions] = useState([]);
+  const [hubOptions, setHubOptions] = useState([]);
   // Anchor used to scroll the page to the first validation problem
   const formTopRef = useRef(null);
   // Incrementing counter used when suggesting the next vehicle ID
@@ -47,9 +65,48 @@ export default function AddVehicle() {
   // Keep the browser tab title in sync with this form page
   useEffect(() => {
     const previousTitle = document.title;
-    document.title = "Add Vehicle | Smart Fleet";
+    document.title = `${isEdit ? "Edit" : "Add"} Vehicle | Smart Fleet`;
     return () => {
       document.title = previousTitle;
+    };
+  }, [isEdit]);
+
+  // Edit mode: load the saved vehicle (including its driver and hub) from the backend
+  useEffect(() => {
+    if (!editId) return undefined;
+    let active = true;
+    setIsLoading(true);
+    getVehicle(editId)
+      .then((record) => {
+        if (!active) return;
+        setFormData(mapVehicleRecordToForm(record));
+        setWasDraft(Boolean(record.isDraft));
+      })
+      .catch((err) => {
+        if (active) setErrors({ form: parseApiError(err, "Unable to load this vehicle.").message });
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [editId]);
+
+  // Load real drivers and hubs for the Assignment section dropdowns
+  useEffect(() => {
+    let active = true;
+    getVehicleFormOptions()
+      .then(({ drivers, hubs }) => {
+        if (!active) return;
+        setDriverOptions(drivers || []);
+        setHubOptions(hubs || []);
+      })
+      .catch((err) => {
+        if (active) setErrors((prev) => ({ ...prev, form: parseApiError(err, "Unable to load drivers and hubs.").message }));
+      });
+    return () => {
+      active = false;
     };
   }, []);
 
@@ -114,23 +171,25 @@ export default function AddVehicle() {
 
     setIsSubmitting(true);
     try {
-      // Persist through vehicleApi (mock store today; POST /vehicles when backend exists)
-      await createVehicle(formData, { asDraft });
+      // Persist through vehicleApi (POST /vehicles, or PATCH /vehicles/:id when editing)
+      if (isEdit) await updateVehicle(editId, formData, { asDraft });
+      else await createVehicle(formData, { asDraft });
       setSubmitSuccess(
         asDraft
           ? "Draft saved. You can continue editing this vehicle later."
-          : "Vehicle added successfully. It is now available on the Vehicles list."
+          : isEdit
+            ? "Vehicle updated successfully."
+            : "Vehicle added successfully. It is now available on the Vehicles list."
       );
       if (!asDraft) {
-        setFormData(INITIAL_FORM);
+        if (!isEdit) setFormData(INITIAL_FORM);
         // Give the user a moment to see success, then return to the list
         setTimeout(() => navigate("/vehicles"), 700);
       }
     } catch (err) {
-      setErrors((prev) => ({
-        ...prev,
-        form: err?.response?.data?.message || err?.message || "Unable to save vehicle.",
-      }));
+      // Show the server message plus any per-field validation errors it returned
+      const { message, fieldErrors } = parseApiError(err, "Unable to save vehicle.");
+      setErrors({ ...fieldErrors, form: message });
       formTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     } finally {
       setIsSubmitting(false);
@@ -147,6 +206,24 @@ export default function AddVehicle() {
   const handleSaveDraft = async () => {
     await submitForm({ asDraft: true });
   };
+
+  // Edit mode: show a loading or error state until the saved vehicle is available
+  if (isEdit && (isLoading || errors.form) && !formData.plateNumber) {
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-white px-6 py-12 text-center text-sm shadow-sm">
+        {isLoading ? (
+          <span className="text-slate-500">Loading vehicle…</span>
+        ) : (
+          <span className="text-red-600">
+            {errors.form}{" "}
+            <Link to="/vehicles" className="font-medium underline">
+              Back to Vehicles
+            </Link>
+          </span>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -168,9 +245,11 @@ export default function AddVehicle() {
             </svg>
             Back to Vehicles
           </Link>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Add Vehicle</h1>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">{isEdit ? "Edit Vehicle" : "Add Vehicle"}</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Register and configure new vehicle for fleet operations across stores.
+            {isEdit
+              ? `Update details for vehicle ${editId}.`
+              : "Register and configure new vehicle for fleet operations across stores."}
           </p>
         </div>
 
@@ -192,6 +271,7 @@ export default function AddVehicle() {
             errors={errors}
             onChange={handleChange}
             onSuggestId={handleSuggestId}
+            idLocked={isEdit}
           />
 
           <div className="border-t border-slate-100 pt-8">
@@ -200,6 +280,8 @@ export default function AddVehicle() {
               errors={errors}
               onChange={handleChange}
               onStatusSelect={handleOperationalStatus}
+              driverOptions={driverOptions}
+              hubOptions={hubOptions}
               disabled={isSubmitting}
             />
           </div>
@@ -234,16 +316,18 @@ export default function AddVehicle() {
             >
               Cancel
             </button>
-            <button
-              type="button"
-              onClick={handleSaveDraft}
-              disabled={isSubmitting}
-              className={outlineBtn}
-            >
-              Save as Draft
-            </button>
+            {(!isEdit || wasDraft) && (
+              <button
+                type="button"
+                onClick={handleSaveDraft}
+                disabled={isSubmitting}
+                className={outlineBtn}
+              >
+                Save as Draft
+              </button>
+            )}
             <button type="submit" disabled={isSubmitting} className={primaryBtn}>
-              {isSubmitting ? "Saving..." : "+ Add Vehicle"}
+              {isSubmitting ? "Saving..." : isEdit ? "Save Changes" : "+ Add Vehicle"}
             </button>
           </div>
         </div>

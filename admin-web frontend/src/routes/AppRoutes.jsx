@@ -50,6 +50,7 @@ export default function AppRoutes() {
 
           <Route path="vehicles" element={<VehicleDashboard />} />
           <Route path="vehicles/add" element={<AddVehicle />} />
+          <Route path="vehicles/:id/edit" element={<AddVehicle />} />
           <Route path="stores" element={<StoresDashboard />} />
           <Route path="stores/add" element={<AddStore />} />
 

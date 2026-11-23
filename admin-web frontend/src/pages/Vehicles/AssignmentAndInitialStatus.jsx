@@ -1,19 +1,10 @@
 import OperationalStatusSelector from "./OperationalStatusSelector";
+import SearchableSelect from "./SearchableSelect";
 
 // Section 2 — driver, hub, mileage, fuel, and operational status
 
-const DRIVER_OPTIONS = [
-  { value: "drv-042", label: "Kamal Perera (DRV-042)" },
-  { value: "drv-018", label: "Nimal Fernando (DRV-018)" },
-  { value: "drv-027", label: "Sajith Silva (DRV-027)" },
-  { value: "pool", label: "Pool Vehicle (Unassigned)" },
-];
-
-const HUB_OPTIONS = [
-  { value: "biyagama", label: "Biyagama Distribution Hub" },
-  { value: "ja-ela", label: "Ja-Ela Distribution Hub" },
-  { value: "kandy", label: "Kandy Distribution Hub" },
-];
+// Pool option is always offered; real drivers and hubs come from GET /vehicles/form-options
+const POOL_OPTION = { value: "pool", label: "Pool Vehicle (Unassigned)" };
 
 // Shared select/input styling with error-aware borders
 const fieldClass = (hasError) =>
@@ -31,12 +22,23 @@ export default function AssignmentAndInitialStatus({
   errors,
   onChange,
   onStatusSelect,
+  driverOptions = [],
+  hubOptions = [],
   disabled = false,
 }) {
   // Derive a friendly label for the fuel slider readout
   const fuelPercent = Number(values.fuelLevel || 0);
   const fuelLabel =
     fuelPercent >= 80 ? "Full Tank" : fuelPercent >= 40 ? "Partial" : "Low Fuel";
+
+  // Dropdown options: drivers show contact and availability, hubs show location and status
+  const driverSelectOptions = [
+    ...driverOptions.map((d) => ({ value: d.value, label: d.label, description: `${d.contact} · Licence ${d.licenseNumber}`, badge: d.status, disabled: d.disabled })),
+    POOL_OPTION,
+  ];
+  const hubSelectOptions = hubOptions.map((h) => ({ value: h.value, label: h.label, description: h.location, badge: h.status, disabled: h.disabled }));
+  const selectedDriver = driverOptions.find((d) => d.value === values.assignedDriver);
+  const selectedHub = hubOptions.find((h) => h.value === values.currentHub);
 
   return (
     <section>
@@ -53,29 +55,26 @@ export default function AssignmentAndInitialStatus({
           <label htmlFor="assignedDriver" className="mb-1.5 block text-xs font-semibold text-slate-700">
             Assigned Driver <span className="text-red-500">*</span>
           </label>
-          <div className="relative">
-            <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400">
+          <SearchableSelect
+            id="assignedDriver"
+            name="assignedDriver"
+            value={values.assignedDriver}
+            onChange={onChange}
+            options={driverSelectOptions}
+            placeholder="Select driver"
+            searchPlaceholder="Search by name, ID or licence..."
+            hasError={Boolean(errors.assignedDriver)}
+            icon={
               <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M16 11a4 4 0 10-8 0 4 4 0 008 0zM4 20a8 8 0 0116 0" />
               </svg>
-            </span>
-            <select
-              id="assignedDriver"
-              name="assignedDriver"
-              value={values.assignedDriver}
-              onChange={onChange}
-              className={`${fieldClass(Boolean(errors.assignedDriver))} pl-9`}
-              aria-invalid={Boolean(errors.assignedDriver)}
-            >
-              <option value="">Select driver</option>
-              {DRIVER_OPTIONS.map((driver) => (
-                <option key={driver.value} value={driver.value}>
-                  {driver.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <p className="mt-1 text-[11px] text-slate-400">Active roster personnel or pool vehicle.</p>
+            }
+          />
+          <p className="mt-1 text-[11px] text-slate-400">
+            {selectedDriver
+              ? `${selectedDriver.contact} · Licence ${selectedDriver.licenseNumber} · ${selectedDriver.status}`
+              : "Available drivers or pool vehicle."}
+          </p>
           {errors.assignedDriver && (
             <p className="mt-1 text-xs text-red-600">{errors.assignedDriver}</p>
           )}
@@ -85,29 +84,24 @@ export default function AssignmentAndInitialStatus({
           <label htmlFor="currentHub" className="mb-1.5 block text-xs font-semibold text-slate-700">
             Current Location / Hub <span className="text-red-500">*</span>
           </label>
-          <div className="relative">
-            <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-slate-400">
+          <SearchableSelect
+            id="currentHub"
+            name="currentHub"
+            value={values.currentHub}
+            onChange={onChange}
+            options={hubSelectOptions}
+            placeholder="Select hub"
+            searchPlaceholder="Search by name or location..."
+            hasError={Boolean(errors.currentHub)}
+            icon={
               <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4 10l2-5h12l2 5M4 10v9h16v-9M9 19v-5h6v5" />
               </svg>
-            </span>
-            <select
-              id="currentHub"
-              name="currentHub"
-              value={values.currentHub}
-              onChange={onChange}
-              className={`${fieldClass(Boolean(errors.currentHub))} pl-9`}
-              aria-invalid={Boolean(errors.currentHub)}
-            >
-              <option value="">Select hub</option>
-              {HUB_OPTIONS.map((hub) => (
-                <option key={hub.value} value={hub.value}>
-                  {hub.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <p className="mt-1 text-[11px] text-slate-400">Home base distribution facility.</p>
+            }
+          />
+          <p className="mt-1 text-[11px] text-slate-400">
+            {selectedHub ? `${selectedHub.location} · ${selectedHub.address}` : "Home base distribution facility."}
+          </p>
           {errors.currentHub && <p className="mt-1 text-xs text-red-600">{errors.currentHub}</p>}
         </div>
 

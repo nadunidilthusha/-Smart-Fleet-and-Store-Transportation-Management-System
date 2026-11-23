@@ -6,6 +6,7 @@ import User from "../modules/users/users.model.js";
 import Store from "../modules/stores/stores.model.js";
 import Item from "../modules/items/items.model.js";
 import Vehicle from "../modules/vehicles/vehicles.model.js";
+import { seedStoreUsers } from "./storeUsers.js";
 
 async function seed() {
   await connectDB();
@@ -32,6 +33,9 @@ async function seed() {
     role: "SYSTEM_ADMIN",
     status: "Active",
   });
+
+  console.log("Creating store employees...");
+  await seedStoreUsers(); // store accounts for Store Web login (hashed by the User model)
 
   console.log("Creating sample items...");
   await Item.insertMany([
