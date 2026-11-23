@@ -4,14 +4,15 @@ import toJSON from "../../utils/toJSONPlugin.js";
 const schema = new mongoose.Schema({
   code: { type: String, required: true, unique: true }, // e.g. BK-1104-0091
   pickup: { type: mongoose.Schema.Types.ObjectId, ref: 'Store', required: true },
-  destination: { type: mongoose.Schema.Types.ObjectId, ref: 'Store', required: true },
+  // A store can save a draft before choosing the destination, so it is only required once submitted
+  destination: { type: mongoose.Schema.Types.ObjectId, ref: 'Store', required: function () { return this.status !== 'Draft'; } },
   requestedFor: { type: Date, required: true },
   submittedAt: { type: Date, default: Date.now },
   requestedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   priority: { type: String, enum: ['Standard', 'Urgent'], default: 'Standard' },
   status: { 
     type: String, 
-    enum: ['Pending', 'Approved', 'Changes requested', 'Rejected', 'Completed'], 
+    enum: ['Draft', 'Pending', 'Approved', 'Changes requested', 'Rejected', 'Completed', 'Cancelled'], 
     default: 'Pending' 
   },
   notes: { type: String },
