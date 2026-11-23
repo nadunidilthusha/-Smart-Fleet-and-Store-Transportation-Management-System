@@ -33,7 +33,7 @@ export const NAV_GROUPS = [
     label: "ANALYTICS",
     items: [
       { label: "Reports", to: "/reports", icon: "reports" },
-      { label: "Audit Log", to: "/audit-log", icon: "reports" },
+      { label: "Audit Log", to: "/audit-log", icon: "audit" },
     ],
   },
 ];

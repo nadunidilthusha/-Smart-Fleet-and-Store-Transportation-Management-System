@@ -4,6 +4,8 @@ import MainLayout from "../layouts/MainLayout";
 import Dashboard from "../pages/Dashboard";
 import Bookings from "../pages/Bookings";
 import Notifications from "../pages/Notifications";
+import AuditLog from "../pages/AuditLog";
+import Reports from "../pages/Reports";
 import BookingDetail from "../pages/BookingDetail";
 import VehicleDashboard from "../pages/VehicleDashboard";
 import AddVehicle from "../pages/Vehicles/AddVehicle";
@@ -57,8 +59,8 @@ export default function AppRoutes() {
           <Route path="items" element={<ItemsDashboard />} />
           <Route path="items/add" element={<AddItem />} />
           <Route path="users" element={<ComingSoon title="Users and roles" />} />
-          <Route path="reports" element={<ComingSoon title="Reports" />} />
-          <Route path="audit-log" element={<ComingSoon title="Audit log" />} />
+          <Route path="reports" element={<Reports />} />
+          <Route path="audit-log" element={<AuditLog />} />
           <Route path="notifications" element={<Notifications />} />
           <Route path="*" element={<ComingSoon title="Page not found" />} />
         </Route>

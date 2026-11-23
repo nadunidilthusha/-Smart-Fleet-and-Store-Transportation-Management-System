@@ -3,6 +3,7 @@ import {
   BarChart3,
   Calendar,
   ClipboardList,
+  History,
   LayoutDashboard,
   MapPin,
   Package,
@@ -29,6 +30,7 @@ const ICONS = {
   items: Package,
   users: Users,
   reports: BarChart3,
+  audit: History,
 };
 
 export default function Sidebar() {
