@@ -1,3 +1,7 @@
+import dns from "node:dns";
+
+dns.setServers(["8.8.8.8", "8.8.4.4"]);
+
 import { connectDB, disconnectDB } from "../config/db.js";
 import logger from "../utils/logger.js";
 import { seedStoreUsers } from "./storeUsers.js";
