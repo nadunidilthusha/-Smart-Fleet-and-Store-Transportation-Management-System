@@ -1,5 +1,14 @@
 import Store from "./stores.model.js";
 
-// Business logic and database access for stores lives here.
-// Controllers call these functions. Keep req and res out of this file.
-// TODO: queries and business rules for stores
+
+
+// GET /api/stores -> [{ id, name }] for the booking pickup / destination dropdowns
+export async function listStoreOptions() {
+  const stores = await Store.find({ status: { $ne: "Inactive" } })
+    .select("name")
+    .sort({ name: 1 })
+    .lean();
+  return stores.map((s) => ({ id: String(s._id), name: s.name }));
+}
+
+// TODO: records for the Stores table, create / draft, update
