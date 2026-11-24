@@ -13,5 +13,6 @@ router.get("/form-options", controller.formOptions);           // GET   /api/veh
 router.get("/:id", controller.getOne);                         // GET   /api/vehicles/:id       one vehicle (keep after the fixed paths above)
 router.post("/", validate({ body: createVehicleSchema }), controller.create);       // POST  /api/vehicles           create or save as draft ({ ...record, asDraft })
 router.patch("/:id", validate({ body: updateVehicleSchema }), controller.update);   // PATCH /api/vehicles/:id
+router.delete("/:id", controller.remove);                      // DELETE /api/vehicles/:id -> { id, message }
 
 export default router;

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   createVehicle,
@@ -56,6 +56,7 @@ export default function AddVehicle() {
   // Driver and hub dropdown options loaded from GET /vehicles/form-options
   const [driverOptions, setDriverOptions] = useState([]);
   const [hubOptions, setHubOptions] = useState([]);
+  const [optionsLoading, setOptionsLoading] = useState(true);
   // Anchor used to scroll the page to the first validation problem
   const formTopRef = useRef(null);
   // Incrementing counter used when suggesting the next vehicle ID
@@ -93,22 +94,22 @@ export default function AddVehicle() {
     };
   }, [editId]);
 
-  // Load real drivers and hubs for the Assignment section dropdowns
+  // Load real drivers (availability comes from active trips) and hubs for the Assignment section dropdowns
+  const loadFormOptions = useCallback(async () => {
+    try {
+      const { drivers, hubs } = await getVehicleFormOptions(editId);
+      setDriverOptions(drivers || []);
+      setHubOptions(hubs || []);
+    } catch (err) {
+      setErrors((prev) => ({ ...prev, form: parseApiError(err, "Unable to load drivers and stores.").message }));
+    } finally {
+      setOptionsLoading(false);
+    }
+  }, [editId]);
+
   useEffect(() => {
-    let active = true;
-    getVehicleFormOptions()
-      .then(({ drivers, hubs }) => {
-        if (!active) return;
-        setDriverOptions(drivers || []);
-        setHubOptions(hubs || []);
-      })
-      .catch((err) => {
-        if (active) setErrors((prev) => ({ ...prev, form: parseApiError(err, "Unable to load drivers and hubs.").message }));
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
+    loadFormOptions();
+  }, [loadFormOptions]);
 
   // Dismiss success feedback as soon as the user starts editing again
   const dismissSuccess = () => {
@@ -190,6 +191,8 @@ export default function AddVehicle() {
       // Show the server message plus any per-field validation errors it returned
       const { message, fieldErrors } = parseApiError(err, "Unable to save vehicle.");
       setErrors({ ...fieldErrors, form: message });
+      // A driver may have just gone on a trip: refresh availability so the dropdown is up to date
+      if (fieldErrors.assignedDriver) loadFormOptions();
       formTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     } finally {
       setIsSubmitting(false);
@@ -272,6 +275,7 @@ export default function AddVehicle() {
             onChange={handleChange}
             onSuggestId={handleSuggestId}
             idLocked={isEdit}
+            hubOptions={hubOptions}
           />
 
           <div className="border-t border-slate-100 pt-8">
@@ -282,6 +286,7 @@ export default function AddVehicle() {
               onStatusSelect={handleOperationalStatus}
               driverOptions={driverOptions}
               hubOptions={hubOptions}
+              optionsLoading={optionsLoading}
               disabled={isSubmitting}
             />
           </div>
@@ -305,7 +310,12 @@ export default function AddVehicle() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M12 20a8 8 0 100-16 8 8 0 000 16z" />
               </svg>
             </span>
-            Vehicle details will sync across all 3 active distribution hubs immediately.
+            {(() => {
+              const active = hubOptions.filter((hub) => !hub.disabled).length;
+              return active > 0
+                ? `Vehicle details will sync across all ${active} active store${active === 1 ? "" : "s"} immediately.`
+                : "Vehicle details will sync across active stores once stores are added.";
+            })()}
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <button

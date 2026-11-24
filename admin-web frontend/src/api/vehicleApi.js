@@ -10,6 +10,7 @@ import apiClient from "./apiClient";
   GET   /vehicles/:id            ->  one vehicle record (edit form)
   POST  /vehicles                body: Add Vehicle record + asDraft (see mapVehicleFormToRecord)
   PATCH /vehicles/:id            body: any vehicle fields (id is the vehicle code)
+  DELETE /vehicles/:id           ->  { id, message }
 */
 
 // Backend field names -> Add Vehicle form field names, used to show server validation errors
@@ -119,14 +120,22 @@ export async function getVehicles() {
 }
 
 // Compact options for the Add Store vehicle-allocation step
-export async function getVehicleAllocationOptions() {
-  const { data } = await apiClient.get("/vehicles/options");
+// Pass the store code when editing a store so its current vehicles stay listed
+export async function getVehicleAllocationOptions(storeId) {
+  const { data } = await apiClient.get("/vehicles/options", { params: storeId ? { storeId } : undefined });
   return data;
 }
 
 // Driver and hub dropdown options for the Add Vehicle form
-export async function getVehicleFormOptions() {
-  const { data } = await apiClient.get("/vehicles/form-options");
+// Pass the vehicle code when editing so that vehicle's own driver stays selectable
+export async function getVehicleFormOptions(vehicleId) {
+  const { data } = await apiClient.get("/vehicles/form-options", { params: vehicleId ? { vehicleId } : undefined });
+  return data;
+}
+
+// Delete a vehicle from MongoDB by its code (DELETE /vehicles/:id)
+export async function deleteVehicle(id) {
+  const { data } = await apiClient.delete(`/vehicles/${encodeURIComponent(id)}`);
   return data;
 }
 

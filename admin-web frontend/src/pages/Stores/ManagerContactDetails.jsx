@@ -24,6 +24,9 @@ const fieldClass = (hasError, extra = "") =>
   ].join(" ");
 
 export default function ManagerContactDetails({ values, errors, onChange }) {
+  // Keep a saved district selectable in edit mode even when it is not in the standard list
+  const districtOptions = !values.district || DISTRICTS.includes(values.district) ? DISTRICTS : [values.district, ...DISTRICTS];
+
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
       <SectionHeader
@@ -128,7 +131,7 @@ export default function ManagerContactDetails({ values, errors, onChange }) {
             aria-invalid={Boolean(errors.district)}
           >
             <option value="">Select district</option>
-            {DISTRICTS.map((district) => (
+            {districtOptions.map((district) => (
               <option key={district} value={district}>
                 {district}
               </option>

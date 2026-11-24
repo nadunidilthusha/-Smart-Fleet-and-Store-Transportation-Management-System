@@ -1,6 +1,14 @@
-import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { createStore } from "../../api/storeApi";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import {
+  createStore,
+  getNextStoreCode,
+  getStore,
+  getStoreRecords,
+  mapStoreRecordToForm,
+  parseStoreError,
+  updateStore,
+} from "../../api/storeApi";
 import { getVehicleAllocationOptions } from "../../api/vehicleApi";
 import BasicStoreInformation from "./BasicStoreInformation";
 import ManagerContactDetails from "./ManagerContactDetails";
@@ -8,20 +16,20 @@ import StorageCapacityThresholds from "./StorageCapacityThresholds";
 import AssignedFleetVehicles from "./AssignedFleetVehicles";
 import { validateStoreForm } from "./FormValidation";
 
-// Default values seeded to mirror the rebuilt Add Store mock
+// Empty form for a new store; the store code is filled with the next free code from the backend
 const INITIAL_FORM = {
-  storeCode: "STR-004",
-  storeName: "Kurunegala Regional Store",
+  storeCode: "",
+  storeName: "",
   storeType: "Regional Store",
   operationalStatus: "active",
-  managerName: "Dilshan Fernando",
-  contactPhone: "+94 77 123 4567",
-  dispatchEmail: "dilshan.f@fleetline.com",
-  district: "Kurunegala",
-  address: "No. 124, Industrial Zone, Dambulla Road, Kurunegala",
-  storageCapacity: "25000",
+  managerName: "",
+  contactPhone: "",
+  dispatchEmail: "",
+  district: "",
+  address: "",
+  storageCapacity: "",
   alertThreshold: "90",
-  loadingBays: "4",
+  loadingBays: "",
   assignedVehicles: [],
 };
 
@@ -30,17 +38,29 @@ const outlineBtn =
 const primaryBtn =
   "inline-flex items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:bg-blue-400";
 
+// Add Store form; the same form is reused for editing at /stores/:id/edit
 export default function AddStore() {
+  // Store code from the URL when editing (undefined when adding)
+  const { id: editId } = useParams();
+  const isEdit = Boolean(editId);
+  // While editing, wait for the saved store before showing the form
+  const [isLoading, setIsLoading] = useState(isEdit);
+  // Whether the store being edited is still a draft (keeps the Save as Draft button available)
+  const [wasDraft, setWasDraft] = useState(false);
   // Hold the full store registration payload in one controlled object
   const [formData, setFormData] = useState(INITIAL_FORM);
   // Track per-field validation messages after submit or live clear
   const [errors, setErrors] = useState({});
   // Reflect save-in-progress UI for draft and primary actions
   const [isSubmitting, setIsSubmitting] = useState(false);
-  // Surface a short success banner after a valid local submit
+  // Surface a short success banner after a save
   const [submitSuccess, setSubmitSuccess] = useState("");
-  // Fleet options for step-4 allocation (from vehicleApi when available)
+  // Fleet options for step-4 allocation (from vehicleApi) with their loading/error state
   const [fleetOptions, setFleetOptions] = useState([]);
+  const [fleetLoading, setFleetLoading] = useState(true);
+  const [fleetError, setFleetError] = useState("");
+  // Existing stores, used for the network overview banner
+  const [networkStores, setNetworkStores] = useState(null);
   // Anchor used to scroll the page when validation fails
   const formTopRef = useRef(null);
   const navigate = useNavigate();
@@ -48,35 +68,97 @@ export default function AddStore() {
   // Keep the browser tab title aligned with this form page
   useEffect(() => {
     const previousTitle = document.title;
-    document.title = "Add Store | Smart Fleet";
+    document.title = `${isEdit ? "Edit" : "Add"} Store | Smart Fleet`;
     return () => {
       document.title = previousTitle;
     };
-  }, []);
+  }, [isEdit]);
 
-  // Load allocatable vehicles for the Assigned Fleet Vehicles step
+  // Add mode: ask the backend for the next free store code
+  const loadNextCode = async () => {
+    try {
+      const code = await getNextStoreCode();
+      setFormData((prev) => ({ ...prev, storeCode: code }));
+      clearFieldError("storeCode");
+    } catch (err) {
+      setErrors((prev) => ({ ...prev, form: parseStoreError(err, "Unable to get the next store code.").message }));
+    }
+  };
+
   useEffect(() => {
+    if (!isEdit) loadNextCode();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEdit]);
+
+  // Edit mode: load the saved store (including its assigned vehicles) from the backend
+  useEffect(() => {
+    if (!editId) return undefined;
     let active = true;
-    getVehicleAllocationOptions()
-      .then((options) => {
+    setIsLoading(true);
+    getStore(editId)
+      .then((record) => {
         if (!active) return;
-        setFleetOptions(options);
-        // Pre-select the first three available units to match the form mock behaviour
-        setFormData((prev) => ({
-          ...prev,
-          assignedVehicles:
-            prev.assignedVehicles.length > 0
-              ? prev.assignedVehicles
-              : options.slice(0, 3).map((v) => v.id),
-        }));
+        setFormData(mapStoreRecordToForm(record));
+        setWasDraft(Boolean(record.isDraft));
       })
-      .catch(() => {
-        if (active) setFleetOptions([]);
+      .catch((err) => {
+        if (active) setErrors({ form: parseStoreError(err, "Unable to load this store.").message });
+      })
+      .finally(() => {
+        if (active) setIsLoading(false);
       });
     return () => {
       active = false;
     };
+  }, [editId]);
+
+  // Load allocatable vehicles for the Assigned Fleet Vehicles step (plus this store's own vehicles when editing)
+  useEffect(() => {
+    let active = true;
+    setFleetLoading(true);
+    setFleetError("");
+    getVehicleAllocationOptions(editId)
+      .then((options) => {
+        if (active) setFleetOptions(Array.isArray(options) ? options : []);
+      })
+      .catch((err) => {
+        if (!active) return;
+        setFleetOptions([]);
+        setFleetError(parseStoreError(err, "Unable to load vehicles.").message);
+      })
+      .finally(() => {
+        if (active) setFleetLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [editId]);
+
+  // Load the existing stores once for the network overview banner
+  useEffect(() => {
+    let active = true;
+    getStoreRecords()
+      .then((records) => active && setNetworkStores(Array.isArray(records) ? records : []))
+      .catch(() => active && setNetworkStores([]));
+    return () => {
+      active = false;
+    };
   }, []);
+
+  // Summary of the live store network (saved, non-draft, non-Inactive facilities)
+  const network = useMemo(() => {
+    const live = (networkStores ?? []).filter((store) => !store.isDraft && store.status !== "Inactive");
+    const capacity = live.reduce((sum, store) => sum + store.capacityM3, 0);
+    const used = live.reduce((sum, store) => sum + store.usedM3, 0);
+    const districts = new Set(live.map((store) => store.district).filter((district) => district && district !== "—"));
+    return {
+      count: live.length,
+      names: live.map((store) => store.name),
+      districts: districts.size,
+      capacity,
+      utilization: capacity > 0 ? Math.round((used / capacity) * 100) : 0,
+    };
+  }, [networkStores]);
 
   // Dismiss success feedback as soon as the user edits again
   const dismissSuccess = () => {
@@ -84,14 +166,14 @@ export default function AddStore() {
   };
 
   // Clear a single field error when that field changes
-  const clearFieldError = (name) => {
-    if (!errors[name]) return;
+  function clearFieldError(name) {
     setErrors((prev) => {
+      if (!prev[name]) return prev;
       const next = { ...prev };
       delete next[name];
       return next;
     });
-  };
+  }
 
   // Generic change handler for text, number, and select inputs
   const handleChange = (event) => {
@@ -133,27 +215,24 @@ export default function AddStore() {
 
     setIsSubmitting(true);
     try {
-      // Persist through storeApi (mock store today; POST /stores when backend exists)
-      await createStore(formData, { asDraft });
+      // Persist through storeApi (POST /stores, or PATCH /stores/:id when editing)
+      if (isEdit) await updateStore(editId, formData, { asDraft });
+      else await createStore(formData, { asDraft });
       setSubmitSuccess(
         asDraft
           ? "Draft saved. You can continue configuring this store later."
-          : "Store added successfully. It is now available on the Stores list."
+          : isEdit
+            ? "Store updated successfully."
+            : "Store added successfully. It is now available on the Stores list."
       );
       if (!asDraft) {
-        setFormData({
-          ...INITIAL_FORM,
-          storeCode: "STR-005",
-          storeName: "",
-          assignedVehicles: [],
-        });
+        // Give the user a moment to see success, then return to the list
         setTimeout(() => navigate("/stores"), 700);
       }
     } catch (err) {
-      setErrors((prev) => ({
-        ...prev,
-        form: err?.response?.data?.message || err?.message || "Unable to save store.",
-      }));
+      // Show the server message plus any per-field validation errors it returned
+      const { message, fieldErrors } = parseStoreError(err, "Unable to save store.");
+      setErrors({ ...fieldErrors, form: message });
       formTopRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
     } finally {
       setIsSubmitting(false);
@@ -182,14 +261,16 @@ export default function AddStore() {
       >
         Cancel
       </button>
-      <button
-        type="button"
-        onClick={handleSaveDraft}
-        disabled={isSubmitting}
-        className={outlineBtn}
-      >
-        Save as Draft
-      </button>
+      {(!isEdit || wasDraft) && (
+        <button
+          type="button"
+          onClick={handleSaveDraft}
+          disabled={isSubmitting}
+          className={outlineBtn}
+        >
+          Save as Draft
+        </button>
+      )}
       <button type="submit" disabled={isSubmitting} className={primaryBtn}>
         <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
           <path strokeLinecap="round" strokeLinejoin="round" d="M12 5v14M5 12h14" />
@@ -197,10 +278,28 @@ export default function AddStore() {
         <svg viewBox="0 0 24 24" className="hidden h-4 w-4 sm:block" fill="none" stroke="currentColor" strokeWidth="1.8">
           <path strokeLinecap="round" strokeLinejoin="round" d="M4 10l2-5h12l2 5M4 10v9h16v-9M9 19v-5h6v5" />
         </svg>
-        {isSubmitting ? "Saving..." : "Add Store"}
+        {isSubmitting ? "Saving..." : isEdit ? "Save Changes" : "Add Store"}
       </button>
     </div>
   );
+
+  // Edit mode: show a loading or error state until the saved store is available
+  if (isEdit && (isLoading || errors.form) && !formData.storeName) {
+    return (
+      <div className="rounded-2xl border border-slate-200 bg-white px-6 py-12 text-center text-sm shadow-sm">
+        {isLoading ? (
+          <span className="text-slate-500">Loading store…</span>
+        ) : (
+          <span className="text-red-600">
+            {errors.form}{" "}
+            <Link to="/stores" className="font-medium underline">
+              Back to Stores
+            </Link>
+          </span>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -212,20 +311,24 @@ export default function AddStore() {
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-2xl font-bold tracking-tight text-slate-900">
-                Add Store & Warehouse
+                {isEdit ? "Edit Store & Warehouse" : "Add Store & Warehouse"}
               </h1>
-              <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-600 ring-1 ring-inset ring-blue-100">
-                {formData.storeCode} Sequential
-              </span>
+              {formData.storeCode && (
+                <span className="inline-flex items-center rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-600 ring-1 ring-inset ring-blue-100">
+                  {isEdit ? formData.storeCode : `${formData.storeCode} Sequential`}
+                </span>
+              )}
             </div>
             <p className="mt-1 text-sm text-slate-500">
-              Register and configure a new warehouse location, inventory hub, or regional store.
+              {isEdit
+                ? `Update details for store ${editId}.`
+                : "Register and configure a new warehouse location, inventory hub, or regional store."}
             </p>
           </div>
           {renderActions()}
         </div>
 
-        {/* Current network overview banner matching the uploaded mock */}
+        {/* Current network overview banner, built from the stores saved in the database */}
         <div className="rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-4 sm:px-5">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-start gap-3">
@@ -237,8 +340,11 @@ export default function AddStore() {
               <div>
                 <p className="text-sm font-semibold text-slate-800">Current Network Overview</p>
                 <p className="mt-0.5 text-xs leading-relaxed text-slate-500">
-                  3 Active Facilities (Biyagama Central Hub, Ja-Ela Distribution Center, Kandy Regional
-                  Store) across 2 provinces
+                  {networkStores === null
+                    ? "Loading stores…"
+                    : network.count === 0
+                      ? "No active facilities yet. This will be the first one."
+                      : `${network.count} Active ${network.count === 1 ? "Facility" : "Facilities"} (${network.names.join(", ")}) across ${network.districts} ${network.districts === 1 ? "district" : "districts"}`}
                 </p>
               </div>
             </div>
@@ -252,7 +358,7 @@ export default function AddStore() {
                 </span>
                 <div>
                   <p className="text-[11px] font-medium text-slate-400">Total Network Storage</p>
-                  <p className="text-sm font-bold text-slate-900">105,000 m³</p>
+                  <p className="text-sm font-bold text-slate-900">{network.capacity.toLocaleString()} m³</p>
                 </div>
               </div>
               <div className="flex items-center gap-2.5">
@@ -263,7 +369,7 @@ export default function AddStore() {
                 </span>
                 <div>
                   <p className="text-[11px] font-medium text-slate-400">Network Utilization</p>
-                  <p className="text-sm font-bold text-slate-900">85%</p>
+                  <p className="text-sm font-bold text-slate-900">{network.utilization}%</p>
                 </div>
               </div>
             </div>
@@ -286,6 +392,7 @@ export default function AddStore() {
           errors={errors}
           onChange={handleChange}
           onStatusSelect={handleStatusSelect}
+          onSuggestCode={isEdit ? undefined : loadNextCode}
         />
 
         <ManagerContactDetails values={formData} errors={errors} onChange={handleChange} />
@@ -298,6 +405,8 @@ export default function AddStore() {
           onToggle={handleVehicleToggle}
           disabled={isSubmitting}
           options={fleetOptions}
+          loading={fleetLoading}
+          loadError={fleetError}
         />
 
         {/* Footer sync note + duplicated action buttons */}

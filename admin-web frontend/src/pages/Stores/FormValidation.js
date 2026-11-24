@@ -62,9 +62,7 @@ export const validateStoreForm = (formData, { asDraft = false } = {}) => {
     ) {
       errors.loadingBays = "Enter a valid number of loading bays.";
     }
-    if (!Array.isArray(formData.assignedVehicles) || formData.assignedVehicles.length === 0) {
-      errors.assignedVehicles = "Allocate at least one fleet vehicle.";
-    }
+    // Fleet allocation is optional: vehicles can also be assigned to this store from the Vehicles form
   }
 
   return errors;

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { getVehicles, parseApiError } from "../api/vehicleApi";
+import { deleteVehicle, getVehicles, parseApiError } from "../api/vehicleApi";
 
 // Status tab keys used for filtering the vehicle table
 const STATUS_TABS = ["All", "Available", "In Use", "Maintenance", "Inactive"];
@@ -37,6 +37,10 @@ export default function VehicleDashboard() {
   const [vehicles, setVehicles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  // Vehicle awaiting delete confirmation, the id being deleted, and the success/error banner
+  const [vehicleToDelete, setVehicleToDelete] = useState(null);
+  const [deletingId, setDeletingId] = useState("");
+  const [notice, setNotice] = useState(null);
   // Active status tab controlling which vehicles appear in the table
   const [activeTab, setActiveTab] = useState("All");
   // Free-text search across ID, plate, and driver
@@ -62,6 +66,24 @@ export default function VehicleDashboard() {
   useEffect(() => {
     loadVehicles();
   }, [loadVehicles]);
+
+  // Delete flow: confirm in a dialog, call DELETE /vehicles/:id, then reload the list
+  const handleConfirmDelete = async () => {
+    if (!vehicleToDelete || deletingId) return;
+    const { id } = vehicleToDelete;
+    setDeletingId(id);
+    try {
+      const result = await deleteVehicle(id);
+      setNotice({ type: "success", message: result?.message || `Vehicle ${id} deleted successfully.` });
+      setVehicleToDelete(null);
+      await loadVehicles();
+    } catch (err) {
+      setNotice({ type: "error", message: parseApiError(err, "Unable to delete this vehicle.").message });
+      setVehicleToDelete(null);
+    } finally {
+      setDeletingId("");
+    }
+  };
 
   // Derive unique vehicle types for the filter dropdown
   const vehicleTypes = useMemo(
@@ -204,6 +226,23 @@ export default function VehicleDashboard() {
 
   return (
     <div className="flex min-h-full flex-col">
+      {/* Result of the last delete attempt */}
+      {notice && (
+        <div
+          role="status"
+          className={`mb-4 flex items-start justify-between gap-3 rounded-xl border px-4 py-3 text-sm ${
+            notice.type === "success"
+              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+              : "border-red-200 bg-red-50 text-red-700"
+          }`}
+        >
+          <span>{notice.message}</span>
+          <button type="button" onClick={() => setNotice(null)} aria-label="Dismiss message" className="font-semibold">
+            ×
+          </button>
+        </div>
+      )}
+
       {/* Summary metric cards */}
       <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
         {summaryCards.map((card) => (
@@ -393,6 +432,14 @@ export default function VehicleDashboard() {
                         >
                           Edit
                         </Link>
+                        <button
+                          type="button"
+                          onClick={() => setVehicleToDelete(vehicle)}
+                          disabled={deletingId === vehicle.id}
+                          className="ml-4 text-sm font-medium text-red-600 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {deletingId === vehicle.id ? "Deleting…" : "Delete"}
+                        </button>
                       </td>
                     </tr>
                   );
@@ -407,6 +454,46 @@ export default function VehicleDashboard() {
           Showing {filteredVehicles.length} of {counts.Total} vehicles
         </div>
       </section>
+
+      {/* Delete confirmation dialog: nothing is deleted until the user confirms */}
+      {vehicleToDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-vehicle-title"
+          onKeyDown={(event) => event.key === "Escape" && !deletingId && setVehicleToDelete(null)}
+        >
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <h2 id="delete-vehicle-title" className="text-lg font-semibold text-slate-900">
+              Delete vehicle?
+            </h2>
+            <p className="mt-2 text-sm text-slate-600">
+              Are you sure you want to delete <span className="font-semibold">{vehicleToDelete.id}</span> (
+              {vehicleToDelete.plate})? This permanently removes the vehicle and cannot be undone.
+            </p>
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                autoFocus
+                onClick={() => setVehicleToDelete(null)}
+                disabled={Boolean(deletingId)}
+                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={Boolean(deletingId)}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-red-400"
+              >
+                {deletingId ? "Deleting…" : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

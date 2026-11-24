@@ -2,39 +2,17 @@ import SectionHeader from "./SectionHeader";
 
 // Step 4 — allocate default fleet vehicles to the new store hub
 
-const FLEET_OPTIONS = [
-  {
-    id: "VH-2041",
-    label: "5T Box Truck",
-    capacity: "28 m³",
-    model: "Isuzu NPR",
-    location: "Available at Central",
-  },
-  {
-    id: "VH-2040",
-    label: "3.5T Medium Van",
-    capacity: "16 m³",
-    model: "Mitsubishi Canter",
-    location: "Available at Central",
-  },
-  {
-    id: "VH-1992",
-    label: "10T Heavy Truck",
-    capacity: "52 m³",
-    model: "Hino 500",
-    location: "Available at Central",
-  },
-];
-
 export default function AssignedFleetVehicles({
   selectedIds,
   error,
   onToggle,
   disabled = false,
-  options,
+  options = [],
+  loading = false,
+  loadError = "",
 }) {
-  // Prefer live allocation options from vehicleApi; fall back to local defaults
-  const fleetOptions = options?.length ? options : FLEET_OPTIONS;
+  // Real vehicles from the backend (GET /vehicles/options); there is no built-in fallback list
+  const fleetOptions = options;
   const allocatedCount = selectedIds.length;
 
   return (
@@ -64,6 +42,14 @@ export default function AssignedFleetVehicles({
           {allocatedCount} Vehicles Allocated
         </span>
       </div>
+
+      {loading && <p className="py-4 text-sm text-slate-500">Loading vehicles…</p>}
+      {!loading && loadError && <p className="py-4 text-sm text-red-600">{loadError}</p>}
+      {!loading && !loadError && fleetOptions.length === 0 && (
+        <p className="py-4 text-sm text-slate-500">
+          No free vehicles found. You can save the store now and assign vehicles later.
+        </p>
+      )}
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         {fleetOptions.map((vehicle) => {

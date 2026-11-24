@@ -19,9 +19,9 @@ async function seed() {
 
   console.log("Creating stores...");
   const stores = await Store.insertMany([
-    { code: "STR-001", name: "Main Store – Biyagama", shortName: "Biyagama Hub" },
-    { code: "STR-002", name: "Store 2 – Ja-Ela", shortName: "Ja-Ela Hub" },
-    { code: "STR-003", name: "Store 3 – Kandy", shortName: "Kandy Hub" },
+    { code: "STR-001", name: "Main Store – Biyagama", shortName: "Biyagama Hub", type: "Central Hub", manager: "Kamal Perera", phone: "+94 11 234 5678", district: "Gampaha", address: "No. 45, Biyagama Export Processing Zone Road, Biyagama", dispatchEmail: "biyagama@fleetline.com", capacityM3: 50000, alertThreshold: 90, loadingBays: 6 },
+    { code: "STR-002", name: "Store 2 – Ja-Ela", shortName: "Ja-Ela Hub", type: "Distribution", manager: "Nimal Fernando", phone: "+94 11 298 4410", district: "Gampaha", address: "No. 12, Negombo Road, Ja-Ela", dispatchEmail: "jaela@fleetline.com", capacityM3: 30000, alertThreshold: 90, loadingBays: 4 },
+    { code: "STR-003", name: "Store 3 – Kandy", shortName: "Kandy Hub", type: "Regional Store", manager: "Dilshan Fernando", phone: "+94 81 222 3344", district: "Kandy", address: "No. 88, Peradeniya Road, Kandy", dispatchEmail: "kandy@fleetline.com", capacityM3: 25000, alertThreshold: 90, loadingBays: 3 },
   ]);
 
   console.log("Creating admin user...");

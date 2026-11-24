@@ -20,7 +20,9 @@ const fieldClass = (hasError) =>
       : "border-slate-200 hover:border-slate-300",
   ].join(" ");
 
-export default function BasicVehicleDetails({ values, errors, onChange, onSuggestId, idLocked = false }) {
+export default function BasicVehicleDetails({ values, errors, onChange, onSuggestId, idLocked = false, hubOptions = [] }) {
+  // Real stores from the backend (Inactive ones are disabled in the hub dropdown)
+  const activeStores = hubOptions.filter((hub) => !hub.disabled);
   // Keep a saved type/model selectable in edit mode even when it is not in the standard list
   const typeModelOptions = VEHICLE_TYPE_MODELS.includes(values.vehicleTypeModel) || !values.vehicleTypeModel
     ? VEHICLE_TYPE_MODELS
@@ -50,17 +52,19 @@ export default function BasicVehicleDetails({ values, errors, onChange, onSugges
             <div>
               <p className="text-sm font-semibold text-slate-800">Connected Fleet Network Coverage</p>
               <p className="mt-0.5 text-xs text-slate-500">
-                This vehicle will sync across Biyagama, Ja-Ela, and Kandy distribution hubs.
+                {activeStores.length > 0
+                  ? `This vehicle will sync across ${activeStores.length} active store${activeStores.length === 1 ? "" : "s"}.`
+                  : "No active stores yet. Add a store to connect this vehicle to the network."}
               </p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {["Biyagama", "Ja-Ela", "Kandy"].map((hub, index) => (
-              <span key={hub} className="flex items-center gap-2 text-xs font-medium text-blue-700">
+            {activeStores.map((hub, index) => (
+              <span key={hub.value} className="flex items-center gap-2 text-xs font-medium text-blue-700">
                 <span className="rounded-full bg-white px-2.5 py-1 shadow-sm ring-1 ring-blue-100">
-                  {hub}
+                  {hub.label}
                 </span>
-                {index < 2 && <span className="hidden text-blue-300 sm:inline">→</span>}
+                {index < activeStores.length - 1 && <span className="hidden text-blue-300 sm:inline">→</span>}
               </span>
             ))}
           </div>

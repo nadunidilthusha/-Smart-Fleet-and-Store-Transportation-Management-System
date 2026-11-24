@@ -36,10 +36,14 @@ function checkDuplicates(candidate, ignoreId) {
   if (errors.length) throw fail(409, "A user with these details already exists.", errors);
 }
 
+// The sample users above use short store ids that no longer exist now that stores come from the backend.
+// Show the name for those ids; users saved with a real store id are resolved from the stores list instead.
+const SAMPLE_STORE_NAMES = { main: "Main Store – Biyagama", "store-2": "Store 2 – Ja-Ela", "store-3": "Store 3 – Kandy" };
+
 export async function getUsers() {
   if (USE_MOCK) {
     await wait();
-    return copy(mockUsers);
+    return copy(mockUsers).map((u) => (SAMPLE_STORE_NAMES[u.storeId] ? { ...u, storeName: SAMPLE_STORE_NAMES[u.storeId] } : u));
   }
   const { data } = await apiClient.get("/users");
   return data;
