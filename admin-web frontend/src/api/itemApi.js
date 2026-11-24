@@ -1,224 +1,136 @@
 import apiClient from "./apiClient";
 
-// While the backend is not ready the Items screens use sample data.
-// Set VITE_USE_MOCK=false in your .env file to use the real API.
-const USE_MOCK = import.meta.env.VITE_USE_MOCK !== "false";
-const wait = (ms = 250) => new Promise((resolve) => setTimeout(resolve, ms));
-
 /*
-  Booking-compatible catalog (existing consumers: Bookings / NewBookingForm):
-  GET /items  ->  [{ code, name, unit }]
+  Items always use the real backend (MongoDB `items` collection) so data survives a refresh and the
+  booking item picker reads the same catalog.
 
-  Master-data records (Items dashboard / Add Item):
-  GET  /items/records  ->  catalog rows for the Items table
-  POST /items          body: create/draft item payload (backend contract TBD)
+  GET    /items            ->  [{ code, name, unit }]   saved items for booking item pickers (drafts excluded)
+  GET    /items/records    ->  [{ id, code, name, category, hub, hubCode, unit, weightKg, volumeM3, stockOnHand, stockUnit,
+                                  reorderLevel, status, criticalHighSpec, stackable, isDraft }]
+  GET    /items/next-code  ->  { code }                 next free ITM-#### code
+  GET    /items/:id        ->  one item record (id is the item code), used by the edit form
+  POST   /items            body: Add Item record + asDraft (see mapItemFormToRecord)
+  PATCH  /items/:id        body: any item fields (id is the item code)
+  DELETE /items/:id        ->  { id, message }
 */
 
-// Keep this shape stable for booking item pickers
-let mockBookingItems = [
-  { code: "FG-2210", name: "Packed rice flour 25 kg", unit: "bag" },
-  { code: "FG-2305", name: "Coconut oil 1 L", unit: "bottle" },
-  { code: "FG-2418", name: "Tea leaves 500 g", unit: "pack" },
-  { code: "RM-0045", name: "Plastic packaging roll", unit: "roll" },
-  { code: "RM-0112", name: "Cardboard carton 5-ply", unit: "box" },
-];
+// Catalog categories and units of measure offered by the Add/Edit form and the Items dashboard filters
+export const ITEM_CATEGORIES = ["Finished Goods", "Raw Materials", "Sub-Assemblies", "Spare Parts & Fasteners"];
+export const ITEM_UNITS = ["unit", "bag", "bottle", "box", "kit", "pack", "pallet", "roll", "spool"];
 
-let mockItemRecords = [
-  {
-    code: "ITM-1029",
-    name: "Steel Flange (100mm)",
-    category: "Finished Goods",
-    hub: "Main Store",
-    weightKg: 4.5,
-    volumeM3: 0.02,
-    stockOnHand: 340,
-    stockUnit: "Units",
-    reorderLevel: 80,
-    status: "In Stock",
-    criticalHighSpec: false,
-    stackable: true,
-  },
-  {
-    code: "ITM-1044",
-    name: "Hydraulic Seal Kit",
-    category: "Spare Parts & Fasteners",
-    hub: "Ja-Ela Distribution Center",
-    weightKg: 1.2,
-    volumeM3: 0.01,
-    stockOnHand: 42,
-    stockUnit: "Kits",
-    reorderLevel: 50,
-    status: "Low Stock",
-    criticalHighSpec: false,
-    stackable: true,
-  },
-  {
-    code: "ITM-1102",
-    name: "Aluminum Casing v3",
-    category: "Sub-Assemblies",
-    hub: "Kandy Regional Store",
-    weightKg: 8.0,
-    volumeM3: 0.05,
-    stockOnHand: 195,
-    stockUnit: "Units",
-    reorderLevel: 60,
-    status: "In Stock",
-    criticalHighSpec: false,
-    stackable: true,
-  },
-  {
-    code: "ITM-1118",
-    name: "Cold-Chain Coolant Pack",
-    category: "Finished Goods",
-    hub: "Main Store",
-    weightKg: 2.4,
-    volumeM3: 0.015,
-    stockOnHand: 18,
-    stockUnit: "Packs",
-    reorderLevel: 40,
-    status: "Critical Low",
-    criticalHighSpec: true,
-    stackable: false,
-  },
-  {
-    code: "ITM-1150",
-    name: "Packaging Film Roll",
-    category: "Raw Materials",
-    hub: "Ja-Ela Distribution Center",
-    weightKg: 12.0,
-    volumeM3: 0.08,
-    stockOnHand: 95,
-    stockUnit: "Spools",
-    reorderLevel: 100,
-    status: "Reorder Soon",
-    criticalHighSpec: false,
-    stackable: true,
-  },
-  {
-    code: "ITM-1166",
-    name: "Bearing Assembly 6204",
-    category: "Spare Parts & Fasteners",
-    hub: "Main Store",
-    weightKg: 0.35,
-    volumeM3: 0.002,
-    stockOnHand: 520,
-    stockUnit: "Units",
-    reorderLevel: 120,
-    status: "In Stock",
-    criticalHighSpec: false,
-    stackable: true,
-  },
-  {
-    code: "ITM-1180",
-    name: "Motor Housing Blank",
-    category: "Raw Materials",
-    hub: "Kandy Regional Store",
-    weightKg: 6.8,
-    volumeM3: 0.04,
-    stockOnHand: 28,
-    stockUnit: "Units",
-    reorderLevel: 35,
-    status: "Low Stock",
-    criticalHighSpec: false,
-    stackable: true,
-  },
-  {
-    code: "ITM-1195",
-    name: "Sensor Module SM-9",
-    category: "Sub-Assemblies",
-    hub: "Main Store",
-    weightKg: 0.9,
-    volumeM3: 0.008,
-    stockOnHand: 210,
-    stockUnit: "Units",
-    reorderLevel: 70,
-    status: "In Stock",
-    criticalHighSpec: true,
-    stackable: true,
-  },
-];
-
+// Form status keys (Status & Handling tiles) <-> status labels stored by the backend
 const STATUS_LABELS = {
   in_stock: "In Stock",
   low_stock: "Low Stock",
   reorder_soon: "Reorder Soon",
+  critical_low: "Critical Low",
+};
+const STATUS_KEYS = Object.fromEntries(Object.entries(STATUS_LABELS).map(([key, label]) => [label, key]));
+
+// Backend field names -> Add Item form field names, used to show server validation errors
+const SERVER_FIELD_TO_FORM = {
+  code: "itemCode",
+  name: "itemName",
+  category: "category",
+  hub: "storageHub",
+  unit: "unit",
+  weightKg: "weightKg",
+  volumeM3: "volumeM3",
+  stockOnHand: "stockOnHand",
+  reorderLevel: "reorderLevel",
+  status: "operationalStatus",
 };
 
-// Normalize form hub labels into the shorter dashboard display names
-function normalizeHub(hub) {
-  if (!hub) return "Main Store";
-  if (hub.includes("Main Store") || hub.includes("Biyagama")) return "Main Store";
-  if (hub.includes("Ja-Ela")) return "Ja-Ela Distribution Center";
-  if (hub.includes("Kandy")) return "Kandy Regional Store";
-  return hub;
+// Turn an Axios error into { message, fieldErrors } for banners and per-field messages
+export function parseItemError(err, fallback = "Something went wrong. Please try again.") {
+  const data = err?.response?.data;
+  const fieldErrors = {};
+  (data?.errors || []).forEach(({ field, message }) => {
+    const name = SERVER_FIELD_TO_FORM[field] || field;
+    if (name && !fieldErrors[name]) fieldErrors[name] = message;
+  });
+  const message = data?.message || (err?.request && !err?.response ? "Cannot reach the server." : err?.message) || fallback;
+  return { message, fieldErrors };
 }
 
-// Map Add Item form values into the dashboard list record shape
+// Map Add Item form values into the backend payload (the storage hub is sent as a store code)
 export function mapItemFormToRecord(formData, { asDraft = false } = {}) {
-  const stockOnHand = Number(formData.stockOnHand) || 0;
-  const reorderLevel = Number(formData.reorderLevel) || 0;
-  let status = STATUS_LABELS[formData.operationalStatus] || "In Stock";
-
-  // Draft items stay visible but inactive for dispatch readiness
-  if (asDraft) status = "Reorder Soon";
-
   return {
     code: formData.itemCode,
     name: formData.itemName,
-    category: formData.category || "Finished Goods",
-    hub: normalizeHub(formData.storageHub),
-    weightKg: Number(formData.weightKg) || 0,
-    volumeM3: Number(formData.volumeM3) || 0,
-    stockOnHand,
-    stockUnit: "Units",
-    reorderLevel,
-    status,
+    category: formData.category || "",
+    hub: formData.storageHub || "",
+    unit: formData.unit || "unit",
+    weightKg: String(formData.weightKg ?? "").replace(/,/g, ""),
+    volumeM3: String(formData.volumeM3 ?? "").replace(/,/g, ""),
+    stockOnHand: String(formData.stockOnHand ?? "").replace(/,/g, ""),
+    reorderLevel: String(formData.reorderLevel ?? "").replace(/,/g, ""),
+    status: STATUS_LABELS[formData.operationalStatus] || "In Stock",
     criticalHighSpec: Boolean(formData.criticalHighSpec),
     stackable: Boolean(formData.stackable),
     isDraft: asDraft,
   };
 }
 
-// Existing booking-facing API — keep return shape unchanged
+// Map a saved item record back into Add/Edit Item form values (pre-fills the edit form)
+export function mapItemRecordToForm(record) {
+  return {
+    itemCode: record.code,
+    itemName: record.name || "",
+    category: record.category || "",
+    storageHub: record.hubCode || "",
+    unit: record.unit || "unit",
+    weightKg: String(record.weightKg ?? ""),
+    volumeM3: String(record.volumeM3 ?? ""),
+    stockOnHand: String(record.stockOnHand ?? ""),
+    reorderLevel: String(record.reorderLevel ?? ""),
+    operationalStatus: STATUS_KEYS[record.status] || "in_stock",
+    criticalHighSpec: Boolean(record.criticalHighSpec),
+    stackable: record.stackable !== false,
+  };
+}
+
+// Booking-facing catalog: [{ code, name, unit }]
 export async function getItems() {
-  if (USE_MOCK) {
-    await wait(150);
-    return JSON.parse(JSON.stringify(mockBookingItems));
-  }
   const { data } = await apiClient.get("/items");
   return data;
 }
 
-// Master-data list for ItemsDashboard
+// Master-data list for ItemsDashboard (read from MongoDB)
 export async function getItemRecords() {
-  if (USE_MOCK) {
-    await wait();
-    return JSON.parse(JSON.stringify(mockItemRecords));
-  }
-  // Backend dependency: dedicated master-data list endpoint is not in this repo yet.
   const { data } = await apiClient.get("/items/records");
   return data;
 }
 
+// Next free item code for the Add Item form
+export async function getNextItemCode() {
+  const { data } = await apiClient.get("/items/next-code");
+  return data.code;
+}
+
+// Load one saved item by its code (GET /items/:id)
+export async function getItem(id) {
+  const { data } = await apiClient.get(`/items/${encodeURIComponent(id)}`);
+  return data;
+}
+
+// Save an item (or draft) to MongoDB and return the saved record
 export async function createItem(formData, { asDraft = false } = {}) {
   const record = mapItemFormToRecord(formData, { asDraft });
-
-  if (USE_MOCK) {
-    await wait(400);
-    mockItemRecords = [record, ...mockItemRecords.filter((i) => i.code !== record.code)];
-
-    // Also expose the new item to booking pickers as { code, name, unit }
-    if (!asDraft && record.name) {
-      mockBookingItems = [
-        { code: record.code, name: record.name, unit: record.stockUnit.toLowerCase() || "unit" },
-        ...mockBookingItems.filter((i) => i.code !== record.code),
-      ];
-    }
-
-    return record;
-  }
-
-  // Backend dependency: POST /items is not available in this repository yet.
   const { data } = await apiClient.post("/items", { ...record, asDraft });
+  return data;
+}
+
+// Save edits to an existing item by its code (PATCH /items/:id); the code itself cannot change
+export async function updateItem(id, formData, { asDraft = false } = {}) {
+  const record = mapItemFormToRecord(formData, { asDraft });
+  delete record.code;
+  const { data } = await apiClient.patch(`/items/${encodeURIComponent(id)}`, { ...record, asDraft });
+  return data;
+}
+
+// Delete an item from MongoDB by its code (DELETE /items/:id)
+export async function deleteItem(id) {
+  const { data } = await apiClient.delete(`/items/${encodeURIComponent(id)}`);
   return data;
 }

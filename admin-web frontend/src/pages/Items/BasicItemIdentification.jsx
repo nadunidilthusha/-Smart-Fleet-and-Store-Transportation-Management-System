@@ -1,13 +1,7 @@
+import { ITEM_CATEGORIES as CATEGORIES, ITEM_UNITS } from "../../api/itemApi";
 import SectionHeader from "./SectionHeader";
 
-// Card A — item code, name, category, and primary storage hub
-
-const CATEGORIES = [
-  "Finished Goods",
-  "Raw Materials",
-  "Sub-Assemblies",
-  "Spare Parts & Fasteners",
-];
+// Card A — item code, name, category, unit of measure, and primary storage hub
 
 const fieldClass = (hasError, extra = "") =>
   [
@@ -101,7 +95,7 @@ export default function BasicItemIdentification({ values, errors, onChange, stor
             className={fieldClass(Boolean(errors.category))}
             aria-invalid={Boolean(errors.category)}
           >
-            {CATEGORIES.map((category) => (
+            {(!values.category || CATEGORIES.includes(values.category) ? CATEGORIES : [values.category, ...CATEGORIES]).map((category) => (
               <option key={category} value={category}>
                 {category}
               </option>
@@ -128,8 +122,9 @@ export default function BasicItemIdentification({ values, errors, onChange, stor
             {stores.length === 0 && (
               <option value="">{storesLoading ? "Loading stores…" : "No stores available"}</option>
             )}
+            {stores.length > 0 && !values.storageHub && <option value="">Select a storage hub</option>}
             {stores.map((store) => (
-              <option key={store.id} value={store.name}>
+              <option key={store.code} value={store.code}>
                 {store.name}
               </option>
             ))}
@@ -138,6 +133,28 @@ export default function BasicItemIdentification({ values, errors, onChange, stor
             {storesError || "Default warehouse where this SKU is stocked first."}
           </p>
           {errors.storageHub && <p className="mt-1 text-xs text-red-600">{errors.storageHub}</p>}
+        </div>
+
+        <div>
+          <label htmlFor="unit" className="mb-1.5 block text-sm font-semibold text-slate-700">
+            Unit of Measure <span className="text-red-500">*</span>
+          </label>
+          <select
+            id="unit"
+            name="unit"
+            value={values.unit}
+            onChange={onChange}
+            className={fieldClass(Boolean(errors.unit))}
+            aria-invalid={Boolean(errors.unit)}
+          >
+            {(ITEM_UNITS.includes(values.unit) ? ITEM_UNITS : [values.unit, ...ITEM_UNITS]).map((unit) => (
+              <option key={unit} value={unit}>
+                {unit}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1.5 text-xs text-slate-400">How this item is counted in bookings and stock levels.</p>
+          {errors.unit && <p className="mt-1 text-xs text-red-600">{errors.unit}</p>}
         </div>
       </div>
     </section>

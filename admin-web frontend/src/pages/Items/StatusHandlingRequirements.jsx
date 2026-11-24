@@ -24,6 +24,13 @@ const STATUS_OPTIONS = [
     selected: "border-blue-500 bg-blue-50/70 ring-1 ring-blue-500/20",
     radio: "border-blue-600 bg-blue-600",
   },
+  {
+    value: "critical_low",
+    title: "Critical Low",
+    description: "Urgent restock needed",
+    selected: "border-red-400 bg-red-50/70 ring-1 ring-red-400/20",
+    radio: "border-red-500 bg-red-500",
+  },
 ];
 
 export default function StatusHandlingRequirements({
@@ -52,7 +59,7 @@ export default function StatusHandlingRequirements({
         <p className="mb-3 text-sm font-semibold text-slate-700">
           Initial Operational Status <span className="text-red-500">*</span>
         </p>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
           {STATUS_OPTIONS.map((option) => {
             const isSelected = values.operationalStatus === option.value;
             return (

@@ -98,7 +98,7 @@ export default function PhysicalSpecsStockLevels({ values, errors, onChange }) {
           onChange={onChange}
           error={errors.stockOnHand}
           placeholder="150"
-          suffix="Units"
+          suffix={values.unit || "Units"}
           hint="Opening quantity recorded at the primary hub."
         />
         <NumberField
