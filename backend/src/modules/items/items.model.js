@@ -14,7 +14,8 @@ const schema = new mongoose.Schema({
   reorderLevel: { type: Number, default: 0 },
   status: { type: String, enum: ['In Stock', 'Low Stock', 'Critical Low', 'Reorder Soon'], default: 'In Stock' },
   criticalHighSpec: { type: Boolean, default: false },
-  stackable: { type: Boolean, default: true }
+  stackable: { type: Boolean, default: true },
+  isDraft: { type: Boolean, default: false } // saved via "Save as Draft" on Add Item
 }, { timestamps: true });
 
 schema.index({ code: 1 }, { unique: true });

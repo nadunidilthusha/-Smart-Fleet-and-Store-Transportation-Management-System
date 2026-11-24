@@ -332,7 +332,7 @@ async function resolveStoreInput(input, storeId) {
 export async function getStoreBookingOptions() {
   const [stores, items] = await Promise.all([
     Store.find({ status: { $ne: "Inactive" } }).select("name").sort({ name: 1 }).lean(),
-    Item.find().select("code name unit").sort({ code: 1 }).lean(),
+    Item.find({ isDraft: { $ne: true } }).select("code name unit").sort({ code: 1 }).lean(), // draft items are not bookable
   ]);
   return {
     stores: stores.map((s) => ({ id: String(s._id), name: s.name })),

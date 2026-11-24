@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { getItemRecords } from "../api/itemApi";
+import { deleteItem, getItemRecords, parseItemError } from "../api/itemApi";
 
 // Tab keys mapped to catalog category filters
 const CATEGORY_TABS = [
@@ -37,12 +37,8 @@ const CATEGORY_STYLES = {
   "Spare Parts & Fasteners": "bg-slate-100 text-slate-700 ring-slate-200",
 };
 
-// Shorten hub labels for denser table cells when needed
-const shortHub = (hub) => {
-  if (!hub) return "—";
-  if (hub.includes("Main Store")) return "Main Store";
-  return hub.replace(" / Biyagama Central", "");
-};
+// Storage hub label for table cells and the hub filter (items without a store show a dash)
+const shortHub = (hub) => hub || "—";
 
 export default function ItemsDashboard() {
   // Item rows loaded from itemApi master-data list
@@ -57,6 +53,10 @@ export default function ItemsDashboard() {
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [hubFilter, setHubFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
+  // Delete flow: item awaiting confirmation, the code being deleted, and the success/error banner
+  const [itemToDelete, setItemToDelete] = useState(null);
+  const [deletingId, setDeletingId] = useState("");
+  const [notice, setNotice] = useState(null);
 
   // Load item master records whenever the dashboard mounts
   const loadItems = useCallback(async () => {
@@ -66,7 +66,7 @@ export default function ItemsDashboard() {
       const data = await getItemRecords();
       setItems(Array.isArray(data) ? data : []);
     } catch (err) {
-      setError(err?.message || "Unable to load items.");
+      setError(parseItemError(err, "Unable to load items.").message);
       setItems([]);
     } finally {
       setLoading(false);
@@ -77,12 +77,30 @@ export default function ItemsDashboard() {
     loadItems();
   }, [loadItems]);
 
+  // Delete flow: confirm in a dialog, call DELETE /items/:id, then reload the list
+  const handleConfirmDelete = async () => {
+    if (!itemToDelete || deletingId) return;
+    const { code } = itemToDelete;
+    setDeletingId(code);
+    try {
+      const result = await deleteItem(code);
+      setNotice({ type: "success", message: result?.message || `Item ${code} deleted successfully.` });
+      setItemToDelete(null);
+      await loadItems();
+    } catch (err) {
+      setNotice({ type: "error", message: parseItemError(err, "Unable to delete this item.").message });
+      setItemToDelete(null);
+    } finally {
+      setDeletingId("");
+    }
+  };
+
   // Aggregate KPI values from the loaded catalog
   const metrics = useMemo(() => {
-    const hubs = new Set(items.map((item) => shortHub(item.hub)));
+    const hubs = new Set(items.map((item) => item.hub).filter(Boolean));
     return {
       totalItems: items.length,
-      activeStores: hubs.size || 3,
+      activeStores: hubs.size,
       inStock: items.filter((item) => item.status === "In Stock").length,
       lowStock: items.filter(
         (item) => item.status === "Low Stock" || item.status === "Critical Low"
@@ -229,6 +247,23 @@ export default function ItemsDashboard() {
 
   return (
     <div className="flex min-h-full flex-col">
+      {/* Result of the last delete attempt */}
+      {notice && (
+        <div
+          role="status"
+          className={`mb-4 flex items-start justify-between gap-3 rounded-xl border px-4 py-3 text-sm ${
+            notice.type === "success"
+              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+              : "border-red-200 bg-red-50 text-red-700"
+          }`}
+        >
+          <span>{notice.message}</span>
+          <button type="button" onClick={() => setNotice(null)} aria-label="Dismiss message" className="font-semibold">
+            ×
+          </button>
+        </div>
+      )}
+
       {/* Page header with export and add actions */}
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
@@ -412,7 +447,7 @@ export default function ItemsDashboard() {
                     <tr key={item.code} className="transition hover:bg-slate-50/80">
                       <td className="whitespace-nowrap px-5 py-4 sm:px-6">
                         <Link
-                          to="/items/add"
+                          to={`/items/${encodeURIComponent(item.code)}/edit`}
                           className="font-semibold text-blue-600 hover:underline"
                         >
                           {item.code}
@@ -450,10 +485,15 @@ export default function ItemsDashboard() {
                           <span className={`h-1.5 w-1.5 rounded-full ${statusStyle.dot}`} />
                           {item.status}
                         </span>
+                        {item.isDraft && (
+                          <span className="ml-2 inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500 ring-1 ring-inset ring-slate-200">
+                            Draft
+                          </span>
+                        )}
                       </td>
                       <td className="whitespace-nowrap px-5 py-4 text-right sm:px-6">
                         <Link
-                          to="/items/add"
+                          to={`/items/${encodeURIComponent(item.code)}/edit`}
                           aria-label={`Edit ${item.code}`}
                           className="inline-flex rounded-lg p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
                         >
@@ -471,6 +511,21 @@ export default function ItemsDashboard() {
                             />
                           </svg>
                         </Link>
+                        <button
+                          type="button"
+                          aria-label={`Delete ${item.code}`}
+                          disabled={deletingId === item.code}
+                          onClick={() => setItemToDelete(item)}
+                          className="ml-1 inline-flex rounded-lg p-1.5 text-slate-400 transition hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                            />
+                          </svg>
+                        </button>
                       </td>
                     </tr>
                   );
@@ -509,6 +564,46 @@ export default function ItemsDashboard() {
           </div>
         </div>
       </section>
+
+      {/* Delete confirmation dialog: nothing is deleted until the user confirms */}
+      {itemToDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-item-title"
+          onKeyDown={(event) => event.key === "Escape" && !deletingId && setItemToDelete(null)}
+        >
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+            <h2 id="delete-item-title" className="text-lg font-semibold text-slate-900">
+              Delete item?
+            </h2>
+            <p className="mt-2 text-sm text-slate-600">
+              Are you sure you want to delete <span className="font-semibold">{itemToDelete.code}</span> (
+              {itemToDelete.name})? This permanently removes the item and cannot be undone.
+            </p>
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                autoFocus
+                onClick={() => setItemToDelete(null)}
+                disabled={Boolean(deletingId)}
+                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={Boolean(deletingId)}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700 disabled:cursor-not-allowed disabled:bg-red-400"
+              >
+                {deletingId ? "Deleting…" : "Delete"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

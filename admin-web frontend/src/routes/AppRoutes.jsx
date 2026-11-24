@@ -61,6 +61,7 @@ export default function AppRoutes() {
 
           <Route path="items" element={<ItemsDashboard />} />
           <Route path="items/add" element={<AddItem />} />
+          <Route path="items/:id/edit" element={<AddItem />} />
           <Route path="users" element={<Users />} />
           <Route path="reports" element={<Reports />} />
           <Route path="audit-log" element={<AuditLog />} />
