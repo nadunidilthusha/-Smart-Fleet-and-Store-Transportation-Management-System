@@ -59,7 +59,8 @@ export async function listStoreRecords() {
   return stores.map((store) => toRecord(store, codes.get(String(store._id))));
 }
 
-// GET /stores: stores that can be picked in dropdowns (bookings, users, items): saved, not drafts, not Inactive
+// GET /stores: stores that can be picked in dropdowns (bookings pickup/destination, users, items): saved, not drafts, not Inactive
+// Returns { id, code, name }; id and name are what the older { id, name } consumers read, code is extra.
 export async function listStoreOptions() {
   const stores = await Store.find({ isDraft: { $ne: true }, status: { $ne: "Inactive" } }).select("code name").sort({ name: 1 }).lean();
   return stores.map((store) => ({ id: String(store._id), code: store.code, name: store.name }));
