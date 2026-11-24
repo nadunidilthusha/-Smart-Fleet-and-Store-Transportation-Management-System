@@ -18,6 +18,8 @@ import StoresDashboard from "../pages/StoresDashboard";
 import AddStore from "../pages/Stores/AddStore";
 import ItemsDashboard from "../pages/ItemsDashboard";
 import AddItem from "../pages/Items/AddItem";
+import Login from "../pages/Login";
+import Users from "../pages/Users";
 
 
 function ComingSoon({ title }) {
@@ -32,7 +34,7 @@ function ComingSoon({ title }) {
 export default function AppRoutes() {
   return (
     <Routes>
-      <Route path="/login" element={<ComingSoon title="Login" />} />
+      <Route path="/login" element={<Login />} />
 
       <Route element={<ProtectedRoute allowedRoles={[ROLES.SYSTEM_ADMIN]} />}>
         <Route element={<MainLayout />}>
@@ -58,7 +60,7 @@ export default function AppRoutes() {
 
           <Route path="items" element={<ItemsDashboard />} />
           <Route path="items/add" element={<AddItem />} />
-          <Route path="users" element={<ComingSoon title="Users and roles" />} />
+          <Route path="users" element={<Users />} />
           <Route path="reports" element={<Reports />} />
           <Route path="audit-log" element={<AuditLog />} />
           <Route path="notifications" element={<Notifications />} />

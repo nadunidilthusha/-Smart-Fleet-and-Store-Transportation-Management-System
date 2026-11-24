@@ -5,6 +5,7 @@ import {
   ClipboardList,
   History,
   LayoutDashboard,
+  LogOut,
   MapPin,
   Package,
   Plus,
@@ -34,7 +35,7 @@ const ICONS = {
 };
 
 export default function Sidebar() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
 
   return (
     <aside className="flex w-[236px] shrink-0 flex-col bg-side px-2.5 py-3.5">
@@ -82,6 +83,15 @@ export default function Sidebar() {
           <p className="truncate text-sm font-medium text-slate-100">{user?.name}</p>
           <p className="truncate text-xs text-[#9db2d3]">{ROLE_LABELS[user?.role] ?? ""}</p>
         </div>
+        <button
+          type="button"
+          onClick={logout}
+          aria-label="Sign out"
+          title="Sign out"
+          className="ml-auto grid h-8 w-8 shrink-0 place-items-center rounded-md text-[#9db2d3] hover:bg-side-hover hover:text-white"
+        >
+          <LogOut size={16} />
+        </button>
       </div>
     </aside>
   );
