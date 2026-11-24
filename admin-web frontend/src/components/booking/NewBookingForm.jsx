@@ -214,10 +214,18 @@ export default function NewBookingForm() {
           <section className={CARD}>
             <div className="p-5">
               <h2 className="mb-3 text-[15px] font-semibold">Route and time</h2>
+              {stores.length < 2 && (
+                <p className="mb-3 rounded-md bg-amber-50 px-3 py-2 text-[13px] text-amber-700">
+                  {stores.length === 0
+                    ? "No active stores found. Add a store first, then create a booking."
+                    : "Only one active store found. A booking needs two different stores, so add another store first."}
+                </p>
+              )}
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
                   <label htmlFor="pickup" className={LABEL}>Pickup store</label>
                   <select id="pickup" value={pickup} onChange={(e) => setPickup(e.target.value)} className={FIELD}>
+                    {stores.length === 0 && <option value="">No stores available</option>}
                     {stores.map((s) => (
                       <option key={s.id} value={s.name}>{s.name}</option>
                     ))}
@@ -227,6 +235,7 @@ export default function NewBookingForm() {
                 <div>
                   <label htmlFor="destination" className={LABEL}>Destination store</label>
                   <select id="destination" value={destination} onChange={(e) => setDestination(e.target.value)} className={FIELD}>
+                    {stores.length === 0 && <option value="">No stores available</option>}
                     {stores.map((s) => (
                       <option key={s.id} value={s.name}>{s.name}</option>
                     ))}

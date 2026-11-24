@@ -8,12 +8,12 @@ export const list = asyncHandler(async (req, res) => {
 
 // GET   /api/vehicles/options   -> [{ id, label, capacity, model, location }]
 export const options = asyncHandler(async (req, res) => {
-  res.json(await service.listVehicleOptions());
+  res.json(await service.listVehicleOptions(req.query.storeId)); // optional ?storeId=STR-001 when editing a store
 });
 
 // GET   /api/vehicles/form-options -> { drivers: [{ value, label }], hubs: [{ value, label }] }
 export const formOptions = asyncHandler(async (req, res) => {
-  res.json(await service.listFormOptions());
+  res.json(await service.listFormOptions(req.query.vehicleId)); // optional ?vehicleId=VH-001 when editing
 });
 
 // GET   /api/vehicles/:id       -> one vehicle record (id is the vehicle code), used by the edit form
@@ -29,4 +29,9 @@ export const create = asyncHandler(async (req, res) => {
 // PATCH /api/vehicles/:id
 export const update = asyncHandler(async (req, res) => {
   res.json(await service.updateVehicle(req.params.id, req.body));
+});
+
+// DELETE /api/vehicles/:id
+export const remove = asyncHandler(async (req, res) => {
+  res.json(await service.deleteVehicle(req.params.id));
 });

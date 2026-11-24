@@ -9,12 +9,6 @@ const CATEGORIES = [
   "Spare Parts & Fasteners",
 ];
 
-const STORAGE_HUBS = [
-  "Main Store / Biyagama Central",
-  "Ja-Ela Distribution Center",
-  "Kandy Regional Store",
-];
-
 const fieldClass = (hasError, extra = "") =>
   [
     "w-full rounded-lg border bg-white px-3 py-2.5 text-sm text-slate-800 outline-none transition",
@@ -26,7 +20,7 @@ const fieldClass = (hasError, extra = "") =>
     extra,
   ].join(" ");
 
-export default function BasicItemIdentification({ values, errors, onChange }) {
+export default function BasicItemIdentification({ values, errors, onChange, stores = [], storesLoading = false, storesError = "" }) {
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
       <SectionHeader
@@ -131,14 +125,17 @@ export default function BasicItemIdentification({ values, errors, onChange }) {
             className={fieldClass(Boolean(errors.storageHub))}
             aria-invalid={Boolean(errors.storageHub)}
           >
-            {STORAGE_HUBS.map((hub) => (
-              <option key={hub} value={hub}>
-                {hub}
+            {stores.length === 0 && (
+              <option value="">{storesLoading ? "Loading stores…" : "No stores available"}</option>
+            )}
+            {stores.map((store) => (
+              <option key={store.id} value={store.name}>
+                {store.name}
               </option>
             ))}
           </select>
-          <p className="mt-1.5 text-xs text-slate-400">
-            Default warehouse where this SKU is stocked first.
+          <p className={`mt-1.5 text-xs ${storesError ? "text-red-600" : "text-slate-400"}`}>
+            {storesError || "Default warehouse where this SKU is stocked first."}
           </p>
           {errors.storageHub && <p className="mt-1 text-xs text-red-600">{errors.storageHub}</p>}
         </div>

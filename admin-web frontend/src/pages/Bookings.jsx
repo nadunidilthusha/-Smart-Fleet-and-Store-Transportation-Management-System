@@ -70,9 +70,10 @@ export default function Bookings() {
     setLoading(true);
     setError("");
     try {
-      const [result, storeList] = await Promise.all([getBookings(), getStores()]);
+      // The store list only feeds the pickup filter, so bookings still load if it cannot be fetched
+      const [result, storeList] = await Promise.all([getBookings(), getStores().catch(() => [])]);
       setData(result);
-      setStores(storeList);
+      setStores(Array.isArray(storeList) ? storeList : []);
     } catch {
       setError("We could not load the bookings. Check your connection and try again.");
     } finally {

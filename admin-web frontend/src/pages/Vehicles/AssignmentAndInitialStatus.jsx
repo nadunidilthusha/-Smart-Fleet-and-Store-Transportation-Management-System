@@ -24,6 +24,7 @@ export default function AssignmentAndInitialStatus({
   onStatusSelect,
   driverOptions = [],
   hubOptions = [],
+  optionsLoading = false,
   disabled = false,
 }) {
   // Derive a friendly label for the fuel slider readout
@@ -90,7 +91,7 @@ export default function AssignmentAndInitialStatus({
             value={values.currentHub}
             onChange={onChange}
             options={hubSelectOptions}
-            placeholder="Select hub"
+            placeholder={optionsLoading ? "Loading stores…" : hubOptions.length === 0 ? "No stores available" : "Select hub"}
             searchPlaceholder="Search by name or location..."
             hasError={Boolean(errors.currentHub)}
             icon={
@@ -100,7 +101,11 @@ export default function AssignmentAndInitialStatus({
             }
           />
           <p className="mt-1 text-[11px] text-slate-400">
-            {selectedHub ? `${selectedHub.location} · ${selectedHub.address}` : "Home base distribution facility."}
+            {selectedHub
+              ? [selectedHub.location, selectedHub.address].filter(Boolean).join(" · ") || selectedHub.label
+              : !optionsLoading && hubOptions.length === 0
+                ? "No stores found. Add a store first, then assign it here."
+                : "Home base distribution facility."}
           </p>
           {errors.currentHub && <p className="mt-1 text-xs text-red-600">{errors.currentHub}</p>}
         </div>

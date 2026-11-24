@@ -1,143 +1,141 @@
 import apiClient from "./apiClient";
 
-// While the backend is not ready the Stores screens use sample data.
-// Set VITE_USE_MOCK=false in your .env file to use the real API.
-const USE_MOCK = import.meta.env.VITE_USE_MOCK !== "false";
-const wait = (ms = 250) => new Promise((resolve) => setTimeout(resolve, ms));
-
 /*
-  Booking-compatible list (existing consumers: Bookings / NewBookingForm):
-  GET /stores  ->  [{ id, name }]
+  Stores always use the real backend (MongoDB `stores` collection) so data survives a refresh and every
+  screen that needs a store (bookings, vehicles, users, items) reads the same list.
 
-  Master-data records (Stores dashboard / Add Store):
-  GET  /stores/records  ->  [{ code, name, type, manager, phone, district, vehicles, usedM3, capacityM3, status, lowStock }]
-  POST /stores          body: create/draft store payload (backend contract TBD)
+  GET    /stores            ->  [{ id, code, name }]   saved, active stores for dropdowns (id = database id, code = STR-001)
+  GET    /stores/records    ->  [{ id, code, name, type, manager, phone, district, vehicles, usedM3, capacityM3, status, lowStock, isDraft, ... }]
+  GET    /stores/next-code  ->  { code }               next free STR-### code
+  GET    /stores/:id        ->  one store record (id is the store code), used by the edit form
+  POST   /stores            body: Add Store record + asDraft (see mapStoreFormToRecord)
+  PATCH  /stores/:id        body: any store fields (id is the store code)
+  DELETE /stores/:id        ->  { id, message }
 */
 
-// Keep these names stable for booking pickup/destination dropdowns
-let mockStores = [
-  { id: "main", name: "Main Store – Biyagama" },
-  { id: "store-2", name: "Store 2 – Ja-Ela" },
-  { id: "store-3", name: "Store 3 – Kandy" },
-];
+// Store types offered by the Add/Edit form and the Stores dashboard filters
+export const STORE_TYPES = ["Central Hub", "Regional Store", "Distribution", "Cold Storage"];
 
-let mockStoreRecords = [
-  {
-    code: "STR-001",
-    name: "Biyagama Central Hub",
-    type: "Central Hub",
-    manager: "Kamal Perera",
-    phone: "+94 11 234 5678",
-    district: "Gampaha",
-    vehicles: 5,
-    usedM3: 44000,
-    capacityM3: 50000,
-    status: "Active",
-    lowStock: false,
-  },
-  {
-    code: "STR-002",
-    name: "Ja-Ela Distribution Center",
-    type: "Distribution",
-    manager: "Nimal Fernando",
-    phone: "+94 11 298 4410",
-    district: "Gampaha",
-    vehicles: 3,
-    usedM3: 22000,
-    capacityM3: 30000,
-    status: "Active",
-    lowStock: false,
-  },
-  {
-    code: "STR-003",
-    name: "Kandy Regional Store",
-    type: "Regional Store",
-    manager: "Dilshan Fernando",
-    phone: "+94 81 222 3344",
-    district: "Kandy",
-    vehicles: 4,
-    usedM3: 22500,
-    capacityM3: 25000,
-    status: "High Capacity",
-    lowStock: true,
-  },
-];
-
+// Form status keys (Basic Store Information tiles) <-> status labels stored by the backend
 const STATUS_LABELS = {
   active: "Active",
   high_capacity: "High Capacity",
   inactive: "Inactive",
 };
+const STATUS_KEYS = Object.fromEntries(Object.entries(STATUS_LABELS).map(([key, label]) => [label, key]));
 
-// Map Add Store form values into the dashboard list record shape
+// Backend field names -> Add Store form field names, used to show server validation errors
+const SERVER_FIELD_TO_FORM = {
+  code: "storeCode",
+  name: "storeName",
+  type: "storeType",
+  status: "operationalStatus",
+  manager: "managerName",
+  phone: "contactPhone",
+  dispatchEmail: "dispatchEmail",
+  district: "district",
+  address: "address",
+  capacityM3: "storageCapacity",
+  alertThreshold: "alertThreshold",
+  loadingBays: "loadingBays",
+  assignedVehicles: "assignedVehicles",
+};
+
+// Turn an Axios error into { message, fieldErrors } for banners and per-field messages
+export function parseStoreError(err, fallback = "Something went wrong. Please try again.") {
+  const data = err?.response?.data;
+  const fieldErrors = {};
+  (data?.errors || []).forEach(({ field, message }) => {
+    const name = SERVER_FIELD_TO_FORM[field] || field;
+    if (name && !fieldErrors[name]) fieldErrors[name] = message;
+  });
+  const message = data?.message || (err?.request && !err?.response ? "Cannot reach the server." : err?.message) || fallback;
+  return { message, fieldErrors };
+}
+
+// Map Add Store form values into the backend payload (the backend owns usage, vehicle counts and alerts)
 export function mapStoreFormToRecord(formData, { asDraft = false } = {}) {
-  const capacityM3 = Number(String(formData.storageCapacity || "0").replace(/,/g, "")) || 0;
-  const status = asDraft
-    ? "Inactive"
-    : STATUS_LABELS[formData.operationalStatus] || "Active";
-
   return {
     code: formData.storeCode,
     name: formData.storeName,
-    type: formData.storeType || "Regional Store",
-    manager: formData.managerName || "—",
-    phone: formData.contactPhone || "—",
-    district: formData.district || "—",
-    vehicles: Array.isArray(formData.assignedVehicles) ? formData.assignedVehicles.length : 0,
-    usedM3: 0,
-    capacityM3,
-    status,
-    lowStock: false,
-    isDraft: asDraft,
-    address: formData.address || "",
+    type: formData.storeType || "",
+    status: asDraft ? "Inactive" : STATUS_LABELS[formData.operationalStatus] || "Active",
+    manager: formData.managerName || "",
+    phone: formData.contactPhone || "",
     dispatchEmail: formData.dispatchEmail || "",
-    alertThreshold: formData.alertThreshold || "",
-    loadingBays: formData.loadingBays || "",
+    district: formData.district || "",
+    address: formData.address || "",
+    capacityM3: String(formData.storageCapacity || "").replace(/,/g, ""),
+    alertThreshold: String(formData.alertThreshold || ""),
+    loadingBays: String(formData.loadingBays || ""),
     assignedVehicles: formData.assignedVehicles || [],
+    isDraft: asDraft,
   };
 }
 
-// Existing booking-facing API — keep return shape unchanged
+// The dashboard shows "—" for empty values; the form should show them as empty
+const blank = (value) => (value && value !== "—" ? String(value) : "");
+
+// Map a saved store record back into Add/Edit Store form values (pre-fills the edit form)
+export function mapStoreRecordToForm(record) {
+  return {
+    storeCode: record.code,
+    storeName: record.name || "",
+    storeType: record.type || "",
+    operationalStatus: STATUS_KEYS[record.status] || "active",
+    managerName: blank(record.manager),
+    contactPhone: blank(record.phone),
+    dispatchEmail: record.dispatchEmail || "",
+    district: blank(record.district),
+    address: record.address || "",
+    storageCapacity: record.capacityM3 ? String(record.capacityM3) : "",
+    alertThreshold: record.alertThreshold === "" ? "" : String(record.alertThreshold ?? ""),
+    loadingBays: record.loadingBays === "" ? "" : String(record.loadingBays ?? ""),
+    assignedVehicles: record.assignedVehicles || [],
+  };
+}
+
+// Dropdown list used by bookings, users and items: [{ id, code, name }]
 export async function getStores() {
-  if (USE_MOCK) {
-    await wait(150);
-    return JSON.parse(JSON.stringify(mockStores));
-  }
   const { data } = await apiClient.get("/stores");
   return data;
 }
 
-// Master-data list for StoresDashboard
+// Master-data list for StoresDashboard (read from MongoDB)
 export async function getStoreRecords() {
-  if (USE_MOCK) {
-    await wait();
-    return JSON.parse(JSON.stringify(mockStoreRecords));
-  }
-  // Backend dependency: dedicated master-data list endpoint is not in this repo yet.
   const { data } = await apiClient.get("/stores/records");
   return data;
 }
 
+// Next free store code for the Add Store form
+export async function getNextStoreCode() {
+  const { data } = await apiClient.get("/stores/next-code");
+  return data.code;
+}
+
+// Load one saved store by its code (GET /stores/:id)
+export async function getStore(id) {
+  const { data } = await apiClient.get(`/stores/${encodeURIComponent(id)}`);
+  return data;
+}
+
+// Save a store (or draft) to MongoDB and return the saved record
 export async function createStore(formData, { asDraft = false } = {}) {
   const record = mapStoreFormToRecord(formData, { asDraft });
-
-  if (USE_MOCK) {
-    await wait(400);
-    mockStoreRecords = [record, ...mockStoreRecords.filter((s) => s.code !== record.code)];
-
-    // Also expose the new store to booking dropdowns as { id, name }
-    if (!asDraft && record.name) {
-      const bookingId = record.code.toLowerCase();
-      mockStores = [
-        { id: bookingId, name: record.name },
-        ...mockStores.filter((s) => s.id !== bookingId && s.name !== record.name),
-      ];
-    }
-
-    return record;
-  }
-
-  // Backend dependency: POST /stores is not available in this repository yet.
   const { data } = await apiClient.post("/stores", { ...record, asDraft });
+  return data;
+}
+
+// Save edits to an existing store by its code (PATCH /stores/:id); the code itself cannot change
+export async function updateStore(id, formData, { asDraft = false } = {}) {
+  const record = mapStoreFormToRecord(formData, { asDraft });
+  delete record.code;
+  const { data } = await apiClient.patch(`/stores/${encodeURIComponent(id)}`, { ...record, asDraft });
+  return data;
+}
+
+// Delete a store from MongoDB by its code (DELETE /stores/:id)
+export async function deleteStore(id) {
+  const { data } = await apiClient.delete(`/stores/${encodeURIComponent(id)}`);
   return data;
 }

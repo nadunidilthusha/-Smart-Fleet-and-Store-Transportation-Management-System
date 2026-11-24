@@ -1,8 +1,7 @@
 import SectionHeader from "./SectionHeader";
+import { STORE_TYPES } from "../../api/storeApi";
 
 // Step 1 — store identity, type, and initial operational status
-
-const STORE_TYPES = ["Regional Store", "Central Warehouse", "Distribution Hub", "Cold Storage"];
 
 const STATUS_OPTIONS = [
   {
@@ -39,7 +38,10 @@ const fieldClass = (hasError, extra = "") =>
     extra,
   ].join(" ");
 
-export default function BasicStoreInformation({ values, errors, onChange, onStatusSelect }) {
+export default function BasicStoreInformation({ values, errors, onChange, onStatusSelect, onSuggestCode }) {
+  // Keep a saved type selectable in edit mode even when it is not in the standard list
+  const typeOptions = !values.storeType || STORE_TYPES.includes(values.storeType) ? STORE_TYPES : [values.storeType, ...STORE_TYPES];
+
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
       <SectionHeader
@@ -59,9 +61,11 @@ export default function BasicStoreInformation({ values, errors, onChange, onStat
             <label htmlFor="storeCode" className="text-sm font-semibold text-slate-700">
               Store Code <span className="text-red-500">*</span>
             </label>
-            <button type="button" className="text-xs font-medium text-blue-600 hover:underline">
-              Next sequential
-            </button>
+            {onSuggestCode && (
+              <button type="button" onClick={onSuggestCode} className="text-xs font-medium text-blue-600 hover:underline">
+                Next sequential
+              </button>
+            )}
           </div>
           <div className="relative">
             <input
@@ -82,7 +86,9 @@ export default function BasicStoreInformation({ values, errors, onChange, onStat
               </svg>
             </span>
           </div>
-          <p className="mt-1.5 text-xs text-slate-400">Following STR-001, STR-002, and STR-003</p>
+          <p className="mt-1.5 text-xs text-slate-400">
+            {values.storeCode ? "Next free code in the store sequence." : "Loading the next store code…"}
+          </p>
           {errors.storeCode && <p className="mt-1 text-xs text-red-600">{errors.storeCode}</p>}
         </div>
 
@@ -119,7 +125,7 @@ export default function BasicStoreInformation({ values, errors, onChange, onStat
             aria-invalid={Boolean(errors.storeType)}
           >
             <option value="">Select store type</option>
-            {STORE_TYPES.map((type) => (
+            {typeOptions.map((type) => (
               <option key={type} value={type}>
                 {type}
               </option>

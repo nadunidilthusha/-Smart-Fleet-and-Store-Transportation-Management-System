@@ -57,6 +57,7 @@ export default function AppRoutes() {
           <Route path="vehicles/:id/edit" element={<AddVehicle />} />
           <Route path="stores" element={<StoresDashboard />} />
           <Route path="stores/add" element={<AddStore />} />
+          <Route path="stores/:id/edit" element={<AddStore />} />
 
           <Route path="items" element={<ItemsDashboard />} />
           <Route path="items/add" element={<AddItem />} />

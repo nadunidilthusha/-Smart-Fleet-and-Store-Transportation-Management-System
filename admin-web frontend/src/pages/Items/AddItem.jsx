@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { createItem } from "../../api/itemApi";
+import { getStores } from "../../api/storeApi";
 import BasicItemIdentification from "./BasicItemIdentification";
 import PhysicalSpecsStockLevels from "./PhysicalSpecsStockLevels";
 import StatusHandlingRequirements from "./StatusHandlingRequirements";
@@ -11,7 +12,7 @@ const INITIAL_FORM = {
   itemCode: "ITM-1215",
   itemName: "",
   category: "Finished Goods",
-  storageHub: "Main Store / Biyagama Central",
+  storageHub: "", // set to the first store from the backend once the stores load
   weightKg: "",
   volumeM3: "",
   stockOnHand: "",
@@ -35,6 +36,10 @@ export default function AddItem() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   // Surface a short success banner after a valid local submit
   const [submitSuccess, setSubmitSuccess] = useState("");
+  // Stores for the Primary Storage Hub dropdown (GET /stores) with their loading/error state
+  const [stores, setStores] = useState([]);
+  const [storesLoading, setStoresLoading] = useState(true);
+  const [storesError, setStoresError] = useState("");
   // Anchor used to scroll the page when validation fails
   const formTopRef = useRef(null);
   // Incrementing counter used when resetting after a successful add
@@ -47,6 +52,23 @@ export default function AddItem() {
     document.title = "Add Item | Smart Fleet";
     return () => {
       document.title = previousTitle;
+    };
+  }, []);
+
+  // Load the real stores and default the hub to the first one
+  useEffect(() => {
+    let active = true;
+    getStores()
+      .then((list) => {
+        if (!active) return;
+        const options = Array.isArray(list) ? list : [];
+        setStores(options);
+        setFormData((prev) => (prev.storageHub ? prev : { ...prev, storageHub: options[0]?.name ?? "" }));
+      })
+      .catch(() => active && setStoresError("Unable to load stores."))
+      .finally(() => active && setStoresLoading(false));
+    return () => {
+      active = false;
     };
   }, []);
 
@@ -109,6 +131,7 @@ export default function AddItem() {
         idCounterRef.current += 1;
         setFormData({
           ...INITIAL_FORM,
+          storageHub: formData.storageHub,
           itemCode: `ITM-${idCounterRef.current}`,
           itemName: "",
         });
@@ -194,7 +217,14 @@ export default function AddItem() {
           </div>
         )}
 
-        <BasicItemIdentification values={formData} errors={errors} onChange={handleChange} />
+        <BasicItemIdentification
+          values={formData}
+          errors={errors}
+          onChange={handleChange}
+          stores={stores}
+          storesLoading={storesLoading}
+          storesError={storesError}
+        />
 
         <PhysicalSpecsStockLevels values={formData} errors={errors} onChange={handleChange} />
 
