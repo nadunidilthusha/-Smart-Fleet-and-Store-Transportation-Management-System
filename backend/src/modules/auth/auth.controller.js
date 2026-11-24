@@ -2,16 +2,14 @@ import asyncHandler from "../../utils/asyncHandler.js";
 import notImplemented from "../../utils/notImplemented.js";
 import * as service from "./auth.service.js";
 
-// POST /api/auth/login   public, returns { token, user }
+// POST /api/auth/login   public, Admin portal sign-in, returns { token, user }
 export const login = asyncHandler(async (req, res) => {
-  notImplemented("POST /login");
-  // TODO: const result = await service.something(); res.json(result);
+  res.json(await service.adminLogin({ ...req.body, ip: req.ip }));
 });
 
 // GET  /api/auth/me      current signed-in user
 export const me = asyncHandler(async (req, res) => {
-  notImplemented("GET /me");
-  // TODO: const result = await service.something(); res.json(result);
+  res.json(await service.getMe(req.user.id));
 });
 
 // GET  /api/auth/store/locations   public, Store Web login dropdown -> [{ id, name, shortName }]

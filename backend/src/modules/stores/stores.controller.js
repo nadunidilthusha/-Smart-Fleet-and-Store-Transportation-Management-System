@@ -1,11 +1,10 @@
 import asyncHandler from "../../utils/asyncHandler.js";
 import notImplemented from "../../utils/notImplemented.js";
-// import * as service from "./stores.service.js";
+import * as service from "./stores.service.js";
 
 // GET   /api/stores           -> [{ id, name }] for booking dropdowns
 export const options = asyncHandler(async (req, res) => {
-  notImplemented("GET /");
-  // TODO: const result = await service.something(); res.json(result);
+  res.json(await service.listStoreOptions());
 });
 
 // GET   /api/stores/records   -> rows for the Stores table
