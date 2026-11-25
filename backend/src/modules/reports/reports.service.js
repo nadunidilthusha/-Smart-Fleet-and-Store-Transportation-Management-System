@@ -74,8 +74,11 @@ const BOOKING_SERIES = [
   { key: "declined", label: "Rejected / cancelled", color: "#ef4444", values: ["Rejected", "Cancelled"] },
 ];
 const GOODS_SERIES = [
-  { key: "confirmed", label: "Confirmed", color: "#16a34a", values: ["confirmed"] },
+  { key: "received", label: "Received", color: "#16a34a", values: ["confirmed"] },
+  { key: "handedOver", label: "Handed over", color: "#3b82f6", values: ["handed_over"] },
+  { key: "prepared", label: "Prepared", color: "#a855f7", values: ["prepared"] },
   { key: "draft", label: "In progress", color: "#d97706", values: ["draft"] },
+  { key: "cancelled", label: "Cancelled", color: "#94a3b8", values: ["cancelled"] },
 ];
 const AUDIT_SERIES = [
   { key: "data", label: "Data changes", color: "#3b82f6", values: DATA_ACTIONS },
@@ -649,51 +652,89 @@ async function itemsReport(query) {
 }
 
 /* =====================================================================
-   6. GOODS   receiving confirmations (expected, received and damaged)
+   6. GOODS   preparation, handover and receiving (quantities and discrepancies)
    ===================================================================== */
-const GOODS_STATUS = { Draft: "draft", Confirmed: "confirmed" };
-const GOODS_LABEL = { draft: "Draft", confirmed: "Confirmed" };
-const GOODS_SORT = { date: "createdAt", trip: "tripCode", store: "storeName", status: "status", expected: "expected", received: "received", damaged: "damaged", variance: "variance", confirmedAt: "confirmedAt" };
+const GOODS_STATUS = { Draft: "draft", Prepared: "prepared", "Handed over": "handed_over", Received: "confirmed", Cancelled: "cancelled" };
+const GOODS_LABEL = Object.fromEntries(Object.entries(GOODS_STATUS).map(([label, value]) => [value, label]));
+const GOODS_SORT = {
+  date: "createdAt",
+  booking: "bookingCode",
+  trip: "tripCode",
+  pickup: "pickupName",
+  store: "storeName",
+  status: "status",
+  expected: "expected",
+  prepared: "prepared",
+  handedOver: "handedOver",
+  received: "received",
+  missing: "missing",
+  damaged: "damaged",
+  excess: "excess",
+  confirmedAt: "confirmedAt",
+};
+
+// Sum of one quantity over the item lines of a confirmation
+const sumLines = (field) => ({ $sum: `$lines.${field}` });
 
 async function goodsReport(query) {
   const { storeId, vehicleId } = await resolveFilters(query);
   const match = { ...dateFilter("createdAt", query) };
   if (query.status) match.status = GOODS_STATUS[query.status] ?? NONE;
-  if (storeId) match.store = storeId;
+  if (storeId) match.$or = [{ store: storeId }, { pickupStore: storeId }]; // the sending or the receiving store
 
   const [out] = await GoodsConfirmation.aggregate([
     { $match: match },
+    join(Booking, "booking", "bk"),
     join(Trip, "trip", "tr"),
     join(Store, "store", "st"),
+    join(Store, "pickupStore", "pk"),
     join(User, "confirmedBy", "usr"),
     {
       $addFields: {
+        bookingCode: first("$bk.code"),
         tripCode: first("$tr.code"),
-        tripVehicle: { $arrayElemAt: ["$tr.vehicle", 0] },
+        tripVehicle: { $ifNull: [{ $arrayElemAt: ["$tr.vehicle", 0] }, { $arrayElemAt: ["$bk.vehicle", 0] }] },
         storeName: first("$st.name"),
+        pickupName: first("$pk.name"),
         confirmedByName: first("$usr.name"),
-        expected: { $sum: "$lines.expected" },
-        received: { $sum: "$lines.received" },
-        damaged: { $sum: "$lines.damaged" },
+        // Quantities added up over the item lines (a step that was not done yet counts as 0)
+        expected: sumLines("expected"),
+        prepared: sumLines("prepared.qty"),
+        handedOver: sumLines("handover.qty"),
+        received: sumLines("receipt.qty"),
+        missing: sumLines("missing"),
+        excess: sumLines("excess"),
+        damaged: sumLines("damaged"),
+        incorrect: sumLines("incorrect"),
       },
     },
-    { $addFields: { variance: { $subtract: ["$received", "$expected"] } } },
+    { $addFields: { discrepancy: { $add: ["$missing", "$excess", "$damaged", "$incorrect"] } } },
     ...(vehicleId ? [{ $match: { tripVehicle: vehicleId } }] : []),
-    ...searchStage(query.q, ["tripCode", "storeName", "confirmedByName", "notes"]),
+    ...searchStage(query.q, ["bookingCode", "tripCode", "pickupName", "storeName", "confirmedByName", "notes"]),
     {
       $facet: {
         rows: [
           ...pageStages({ sortField: GOODS_SORT[query.sort] ?? "createdAt", dir: query.dir, page: query.page, limit: query.limit }),
           join(Item, "lines.item", "itemDocs"),
-          { $project: { tr: 0, st: 0, usr: 0 } },
+          { $project: { bk: 0, tr: 0, st: 0, pk: 0, usr: 0 } },
         ],
         total: [{ $count: "n" }],
         byStatus: [{ $group: { _id: "$status", n: { $sum: 1 } } }],
-        stats: [{ $group: { _id: null, expected: { $sum: "$expected" }, received: { $sum: "$received" }, damaged: { $sum: "$damaged" } } }],
-        byStore: [
-          { $group: { _id: "$storeName", n: { $sum: "$received" } } },
-          { $sort: { n: -1, _id: 1 } },
-          { $limit: 10 },
+        stats: [
+          {
+            $group: {
+              _id: null,
+              expected: { $sum: "$expected" },
+              prepared: { $sum: "$prepared" },
+              handedOver: { $sum: "$handedOver" },
+              received: { $sum: "$received" },
+              missing: { $sum: "$missing" },
+              excess: { $sum: "$excess" },
+              damaged: { $sum: "$damaged" },
+              incorrect: { $sum: "$incorrect" },
+              affected: { $sum: { $cond: [{ $gt: ["$discrepancy", 0] }, 1, 0] } }, // confirmations with at least one discrepancy
+            },
+          },
         ],
         trend: [trendGroup({ dateField: "createdAt", groupField: "status", series: GOODS_SERIES, timezone: timezoneName(query.tz) })],
       },
@@ -701,27 +742,48 @@ async function goodsReport(query) {
   ]);
 
   const total = totalOf(out);
-  const by = countMap(out.byStatus);
   const stats = out.stats[0] ?? {};
+  const discrepancies = (stats.missing ?? 0) + (stats.excess ?? 0) + (stats.damaged ?? 0) + (stats.incorrect ?? 0);
+
+  // One step of one item line: what was counted and how it differs from the step before
+  const step = (s) => (s ? { qty: s.qty ?? null, difference: s.difference ?? null, type: s.discrepancyType ?? "none", damaged: s.damaged ?? 0, incorrect: s.incorrect ?? 0, note: s.note ?? "" } : null);
+
   const rows = out.rows.map((g) => ({
     id: String(g._id),
     date: g.createdAt,
+    booking: g.bookingCode,
     trip: g.tripCode,
+    pickup: g.pickupName,
     store: g.storeName,
     status: GOODS_LABEL[g.status] ?? g.status,
     expected: g.expected,
+    prepared: g.prepared,
+    handedOver: g.handedOver,
     received: g.received,
+    missing: g.missing,
+    excess: g.excess,
     damaged: g.damaged,
-    variance: g.variance,
+    incorrect: g.incorrect,
+    discrepancy: g.discrepancy,
     confirmedBy: g.confirmedByName,
     confirmedAt: g.confirmedAt ?? null,
-    notes: g.notes ?? "",
+    preparedAt: g.stages?.prepared?.confirmed ? g.stages.prepared.at : null,
+    preparedBy: g.stages?.prepared?.confirmed ? g.stages.prepared.byName ?? "" : "",
+    handoverAt: g.stages?.handover?.confirmed ? g.stages.handover.at : null,
+    handoverBy: g.stages?.handover?.confirmed ? g.stages.handover.byName ?? "" : "",
+    notes: { prepared: g.stages?.prepared?.note ?? "", handover: g.stages?.handover?.note ?? "", receipt: g.stages?.receipt?.note ?? "" },
     lines: (g.lines ?? []).map((line) => ({
       item: g.itemDocs.find((i) => String(i._id) === String(line.item))?.name ?? "Unknown item",
       expected: line.expected ?? 0,
-      received: line.received ?? 0,
+      prepared: step(line.prepared),
+      handover: step(line.handover),
+      receipt: step(line.receipt),
+      missing: line.missing ?? 0,
+      excess: line.excess ?? 0,
       damaged: line.damaged ?? 0,
+      incorrect: line.incorrect ?? 0,
     })),
+    history: (g.history ?? []).map((h) => ({ stage: h.stage, action: h.action, by: h.byName ?? "", at: h.at, note: h.note ?? "" })),
   }));
 
   return reportResult({
@@ -730,14 +792,26 @@ async function goodsReport(query) {
     rows,
     total,
     kpis: [
-      kpi("Confirmations", total, "goods receiving records"),
-      kpi("Confirmed", by.confirmed ?? 0, `${pct(by.confirmed ?? 0, total)}% of records`),
-      kpi("In progress", by.draft ?? 0, "saved as draft"),
-      kpi("Units received", stats.received ?? 0, `of ${stats.expected ?? 0} expected`),
-      kpi("Damaged units", stats.damaged ?? 0, `${pct(stats.damaged ?? 0, stats.received ?? 0)}% of received`),
+      kpi("Expected goods", stats.expected ?? 0, `${plural(total, "confirmation")} in range`),
+      kpi("Prepared", stats.prepared ?? 0, `${pct(stats.prepared ?? 0, stats.expected ?? 0)}% of expected`),
+      kpi("Handed over", stats.handedOver ?? 0, `${pct(stats.handedOver ?? 0, stats.prepared ?? 0)}% of prepared`),
+      kpi("Received", stats.received ?? 0, `${pct(stats.received ?? 0, stats.handedOver ?? 0)}% of handed over`),
+      kpi("Discrepancies", discrepancies, `${plural(stats.affected ?? 0, "confirmation")} affected`),
+      kpi("Missing goods", stats.missing ?? 0, "short of the step before"),
+      kpi("Damaged goods", stats.damaged ?? 0, `${pct(stats.damaged ?? 0, stats.received ?? 0)}% of received`),
+      kpi("Excess goods", stats.excess ?? 0, `${stats.incorrect ?? 0} incorrect units`),
     ],
-    breakdown: { title: "Units received by store", sub: "Confirmed and draft receiving, highest first", items: pairs(out.byStore) },
-    trend: buildTrend({ rows: out.trend, series: GOODS_SERIES, from: query.from, to: query.to, tzOffset: query.tz, title: "Receiving records per day", sub: "By confirmation state" }),
+    breakdown: {
+      title: "Discrepancies by type",
+      sub: `${plural(discrepancies, "unit")} across all steps`,
+      items: [
+        ["Missing", stats.missing ?? 0],
+        ["Damaged", stats.damaged ?? 0],
+        ["Excess", stats.excess ?? 0],
+        ["Incorrect", stats.incorrect ?? 0],
+      ].sort((a, b) => b[1] - a[1]),
+    },
+    trend: buildTrend({ rows: out.trend, series: GOODS_SERIES, from: query.from, to: query.to, tzOffset: query.tz, title: "Goods confirmations per day", sub: "By progress of the confirmation" }),
   });
 }
 
@@ -811,7 +885,7 @@ export async function getReportOptions() {
       { key: "vehicles", label: "Vehicles", title: "Vehicle utilisation", statusLabel: "Status", statuses: VEHICLE_STATUSES, search: "Search vehicle, driver or hub…" },
       { key: "stores", label: "Stores", title: "Store performance", statusLabel: "Status", statuses: enumValues(Store), search: "Search store, district or manager…" },
       { key: "items", label: "Items", title: "Item inventory and movements", statusLabel: "Stock status", statuses: enumValues(Item), categoryLabel: "Category", categories: categories.sort(), search: "Search item, category or store…" },
-      { key: "goods", label: "Goods receiving", title: "Goods receiving confirmations", statusLabel: "State", statuses: Object.keys(GOODS_STATUS), search: "Search trip, store or confirmed by…" },
+      { key: "goods", label: "Goods receiving", title: "Goods preparation, handover and receiving", statusLabel: "State", statuses: Object.keys(GOODS_STATUS), search: "Search booking, trip, store or employee…" },
       { key: "audit", label: "Audit", title: "System activity", statusLabel: "Action", statuses: audit.actions, categoryLabel: "Module", categories: audit.entities, search: "Search user, record ID or details…" },
     ],
     stores: stores.map((s) => ({ code: s.code, name: s.name })),

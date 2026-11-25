@@ -63,7 +63,18 @@ const STATUS_TONE = {
   "Low Stock": "bg-amber-50 text-amber-700",
   "Critical Low": "bg-red-50 text-red-700",
   Draft: "bg-amber-50 text-amber-700",
+  Prepared: "bg-violet-50 text-violet-700",
+  "Handed over": "bg-blue-50 text-blue-700",
+  Received: "bg-green-50 text-green-700",
   Confirmed: "bg-green-50 text-green-700",
+};
+
+// One step of a goods line shown in the report drawer (qty and how it differs from the step before)
+const stepQty = (s) => (s?.qty == null ? "–" : formatNumber(s.qty));
+const stepDiff = (s) => {
+  if (!s || s.difference == null || s.type === "none") return "–";
+  const sign = s.difference > 0 ? "+" : "";
+  return `${sign}${formatNumber(s.difference)} (${s.type})`;
 };
 
 // Audit actions: [label, colour] (same wording as the Audit log page)
@@ -352,45 +363,75 @@ const REPORTS = {
   goods: {
     filters: { store: true, vehicle: true },
     defaultSort: { key: "date", dir: "desc" },
-    noun: (r) => `Goods receiving${r.trip ? ` · ${r.trip}` : ""}`,
+    noun: (r) => `Goods confirmation${r.booking ? ` · ${r.booking}` : ""}`,
     columns: [
       { key: "date", label: "Created", sortable: true, render: (r) => mono(dateTime(r.date)), csv: (r) => dateTime(r.date) },
+      { key: "booking", label: "Booking", sortable: true, render: (r) => <span className="font-medium tabular-nums">{dash(r.booking)}</span>, csv: (r) => r.booking },
       { key: "trip", label: "Trip", sortable: true, render: (r) => dash(r.trip), csv: (r) => r.trip },
+      { key: "pickup", label: "Sending store", sortable: true, render: (r) => dash(r.pickup), csv: (r) => r.pickup },
       { key: "store", label: "Receiving store", sortable: true, render: (r) => dash(r.store), csv: (r) => r.store },
       { key: "status", label: "State", sortable: true, render: (r) => <StatusTag status={r.status} /> },
       { key: "expected", label: "Expected", sortable: true, align: "right", render: num("expected"), csv: (r) => r.expected },
+      { key: "prepared", label: "Prepared", sortable: true, align: "right", render: num("prepared"), csv: (r) => r.prepared },
+      { key: "handedOver", label: "Handed over", sortable: true, align: "right", render: num("handedOver"), csv: (r) => r.handedOver },
       { key: "received", label: "Received", sortable: true, align: "right", render: num("received"), csv: (r) => r.received },
-      { key: "damaged", label: "Damaged", sortable: true, align: "right", render: (r) => <span className={r.damaged ? "text-bad" : ""}>{formatNumber(r.damaged)}</span>, csv: (r) => r.damaged },
       {
-        key: "variance",
-        label: "Variance",
-        sortable: true,
+        key: "discrepancy",
+        label: "Discrepancies",
         align: "right",
-        render: (r) => <span className={r.variance < 0 ? "text-bad" : ""}>{r.variance > 0 ? "+" : ""}{formatNumber(r.variance)}</span>,
-        csv: (r) => r.variance,
+        render: (r) => (
+          <span className={r.discrepancy ? "font-medium text-bad" : ""}>
+            {formatNumber(r.discrepancy)}
+          </span>
+        ),
+        csv: (r) => r.discrepancy,
       },
-      { key: "confirmedBy", label: "Confirmed by", render: (r) => dash(r.confirmedBy), csv: (r) => r.confirmedBy },
-      { key: "confirmedAt", label: "Confirmed at", sortable: true, render: (r) => mono(dateTime(r.confirmedAt)), csv: (r) => dateTime(r.confirmedAt) },
+      { key: "missing", label: "Missing", sortable: true, align: "right", render: (r) => <span className={r.missing ? "text-bad" : ""}>{formatNumber(r.missing)}</span>, csv: (r) => r.missing },
+      { key: "damaged", label: "Damaged", sortable: true, align: "right", render: (r) => <span className={r.damaged ? "text-bad" : ""}>{formatNumber(r.damaged)}</span>, csv: (r) => r.damaged },
+      { key: "excess", label: "Excess", sortable: true, align: "right", render: num("excess"), csv: (r) => r.excess },
+      { key: "confirmedBy", label: "Received by", render: (r) => dash(r.confirmedBy), csv: (r) => r.confirmedBy },
+      { key: "confirmedAt", label: "Received at", sortable: true, render: (r) => mono(dateTime(r.confirmedAt)), csv: (r) => dateTime(r.confirmedAt) },
     ],
     detail: (r) => ({
       fields: [
+        ["Booking", dash(r.booking)],
         ["Trip", dash(r.trip)],
+        ["Sending store", dash(r.pickup)],
         ["Receiving store", dash(r.store)],
         ["State", r.status],
         ["Created", dateTime(r.date)],
-        ["Confirmed by", dash(r.confirmedBy)],
-        ["Confirmed at", dateTime(r.confirmedAt)],
+        ["Prepared", `${formatNumber(r.prepared)} · ${dash(r.preparedBy)} · ${dateTime(r.preparedAt)}`],
+        ["Handed over", `${formatNumber(r.handedOver)} · ${dash(r.handoverBy)} · ${dateTime(r.handoverAt)}`],
+        ["Received", `${formatNumber(r.received)} · ${dash(r.confirmedBy)} · ${dateTime(r.confirmedAt)}`],
         ["Expected", formatNumber(r.expected)],
-        ["Received", formatNumber(r.received)],
+        ["Missing", formatNumber(r.missing)],
         ["Damaged", formatNumber(r.damaged)],
-        ["Variance", formatNumber(r.variance)],
-        ["Notes", dash(r.notes)],
+        ["Excess", formatNumber(r.excess)],
+        ["Incorrect", formatNumber(r.incorrect)],
+        ["Total discrepancies", formatNumber(r.discrepancy)],
+        ["Preparation note", dash(r.notes?.prepared)],
+        ["Handover note", dash(r.notes?.handover)],
+        ["Receipt note", dash(r.notes?.receipt)],
       ],
       tables: [
         {
-          title: "Items",
-          head: ["Item", "Expected", "Received", "Damaged"],
-          rows: r.lines.map((l) => [l.item, formatNumber(l.expected), formatNumber(l.received), formatNumber(l.damaged)]),
+          title: "Item quantities by step",
+          head: ["Item", "Expected", "Prepared", "Handover", "Received", "Missing", "Damaged", "Excess"],
+          rows: r.lines.map((l) => [
+            l.item,
+            formatNumber(l.expected),
+            `${stepQty(l.prepared)}${l.prepared?.type && l.prepared.type !== "none" ? ` (${stepDiff(l.prepared)})` : ""}`,
+            `${stepQty(l.handover)}${l.handover?.type && l.handover.type !== "none" ? ` (${stepDiff(l.handover)})` : ""}`,
+            `${stepQty(l.receipt)}${l.receipt?.type && l.receipt.type !== "none" ? ` (${stepDiff(l.receipt)})` : ""}`,
+            formatNumber(l.missing),
+            formatNumber(l.damaged),
+            formatNumber(l.excess),
+          ]),
+        },
+        {
+          title: "History",
+          head: ["Action", "Stage", "By", "When", "Note"],
+          rows: (r.history ?? []).map((h) => [h.action, dash(h.stage), dash(h.by), dateTime(h.at), dash(h.note)]),
         },
       ],
     }),
@@ -941,7 +982,8 @@ export default function Reports() {
 
           {ready && (
             <div className={loading ? "opacity-60 transition-opacity" : "transition-opacity"}>
-              <div className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-5">
+              {/* Goods report returns eight summary tiles; other reports return five */}
+              <div className={`mb-4 grid grid-cols-2 gap-4 ${data.kpis.length > 5 ? "lg:grid-cols-4" : "lg:grid-cols-5"}`}>
                 {data.kpis.map((k, i) => (
                   <Kpi key={k.label} icon={KPI_STYLE[i % KPI_STYLE.length][0]} tone={KPI_STYLE[i % KPI_STYLE.length][1]} label={k.label} value={k.value} foot={k.foot} />
                 ))}
