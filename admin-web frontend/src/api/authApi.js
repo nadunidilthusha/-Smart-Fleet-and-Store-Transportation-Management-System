@@ -2,7 +2,7 @@ import apiClient from "./apiClient";
 import { ROLES } from "../utils/roles";
 
 
-const USE_MOCK = import.meta.env.VITE_USE_MOCK !== "false";
+const USE_MOCK = false;
 const wait = (ms = 400) => new Promise((resolve) => setTimeout(resolve, ms));
 
 
