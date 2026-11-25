@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { ROLES } from "../config/constants.js";
 import { env } from "../config/env.js";
-import protect from "../middleware/auth.js";
+import protect, { attachUser } from "../middleware/auth.js";
 import authorize from "../middleware/authorize.js";
 import healthRoutes from "./health.routes.js";
 import storeRoutes from "./store.routes.js";
@@ -28,8 +28,8 @@ router.use("/auth", authRoutes);
 
 // ---- Admin portal: signed in + SYSTEM_ADMIN ----
 const adminOnly = [protect, authorize(ROLES.SYSTEM_ADMIN)];
-// TEMP (development only): Vehicles, Stores and Items skip sign-in until login is built; production and test keep adminOnly. Remove once login works.
-const vehiclesGuard = env.NODE_ENV === "development" ? [] : adminOnly;
+// TEMP (development only): Vehicles, Stores, Items and Audit log skip sign-in until login is built (the user is still read from the token when one is sent, for audit entries); production and test keep adminOnly. Remove once login works.
+const vehiclesGuard = env.NODE_ENV === "development" ? [attachUser] : adminOnly;
 router.use("/users", ...adminOnly, usersRoutes);             // admin-web src/api/userApi.js
 router.use("/stores", ...vehiclesGuard, storesRoutes);       // admin-web src/api/storeApi.js
 router.use("/items", ...vehiclesGuard, itemsRoutes);            // admin-web src/api/itemApi.js
@@ -41,7 +41,7 @@ router.use("/tracking", ...adminOnly, trackingRoutes);       // admin-web src/ap
 router.use("/notifications", ...adminOnly, notificationsRoutes); // admin-web and store-web src/api/notificationApi.js
 router.use("/dashboard", ...adminOnly, dashboardRoutes);     // admin-web src/api/dashboardApi.js and store-web src/api/dashboardApi.js
 router.use("/reports", ...adminOnly, reportsRoutes);         // admin-web src/api/reportApi.js
-router.use("/audit-log", ...adminOnly, auditRoutes);         // admin-web src/api/auditApi.js
+router.use("/audit-log", ...vehiclesGuard, auditRoutes);     // admin-web src/api/auditApi.js
 
 // ---- Store portal: signed in + store roles ----
 router.use("/store", protect, authorize(ROLES.STORE_MANAGER, ROLES.STORE_EMPLOYEE), storeRoutes);

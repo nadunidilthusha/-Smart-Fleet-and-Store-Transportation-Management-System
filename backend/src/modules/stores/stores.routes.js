@@ -1,6 +1,8 @@
 import { Router } from "express";
 import * as controller from "./stores.controller.js";
 import validate from "../../middleware/validate.js";
+import audit from "../../middleware/audit.js";
+import { getStore } from "./stores.service.js";
 import { createStoreSchema, updateStoreSchema } from "./stores.schema.js";
 
 const router = Router();
@@ -11,8 +13,8 @@ router.get("/", controller.options);                           // GET   /api/sto
 router.get("/records", controller.records);                    // GET   /api/stores/records   -> rows for the Stores table
 router.get("/next-code", controller.nextCode);                 // GET   /api/stores/next-code -> { code }
 router.get("/:id", controller.getOne);                         // GET   /api/stores/:id       one store by code (keep after the fixed paths above)
-router.post("/", validate({ body: createStoreSchema }), controller.create);       // POST  /api/stores           create or save as draft ({ ...record, asDraft })
-router.patch("/:id", validate({ body: updateStoreSchema }), controller.update);   // PATCH /api/stores/:id
-router.delete("/:id", controller.remove);                      // DELETE /api/stores/:id -> { id, message }
+router.post("/", validate({ body: createStoreSchema }), audit({ entity: "Store", action: "CREATE" }), controller.create);       // POST  /api/stores           create or save as draft ({ ...record, asDraft })
+router.patch("/:id", validate({ body: updateStoreSchema }), audit({ entity: "Store", action: "UPDATE", load: (req) => getStore(req.params.id) }), controller.update);   // PATCH /api/stores/:id
+router.delete("/:id", audit({ entity: "Store", action: "DELETE", load: (req) => getStore(req.params.id) }), controller.remove);                      // DELETE /api/stores/:id -> { id, message }
 
 export default router;
