@@ -4,7 +4,8 @@ import apiClient from "./apiClient";
   Vehicles always use the real backend (MongoDB `vehicles` collection) so data survives a refresh.
 
   GET   /vehicles                ->  [{ id, plate, type, model, driver, capacity, hub, mileage, fuel, status }]
-  GET   /vehicles/options        ->  [{ id, label, capacity, model, location }]  (for store allocation UI)
+  GET   /vehicles/options        ->  [{ id, label, plate, status, capacity, model, hub, hubCode, selectable, assignment, location }]
+                                      assignment is "available" | "this-store" | "other-store" (?storeId=STR-001 when editing)
   GET   /vehicles/form-options   ->  { drivers: [{ value, label, id, name, contact, licenseNumber, status, disabled }],
                                        hubs: [{ value, label, id, name, location, address, status, disabled }] }  (searchable dropdowns)
   GET   /vehicles/:id            ->  one vehicle record (edit form)

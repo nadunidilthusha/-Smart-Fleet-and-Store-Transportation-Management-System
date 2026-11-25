@@ -108,22 +108,31 @@ export async function getVehicle(code) {
   return toRecord(vehicle);
 }
 
-// GET /vehicles/options: free vehicles offered when allocating a fleet to a store
-// Pass the store code when editing a store so the vehicles already based there stay listed
+// GET /vehicles/options: every saved vehicle, with whether it can be assigned to this store
+// A vehicle is selectable only when it has no hub, or it is already based at the store being edited.
+// Pass the store code when editing so those vehicles stay selectable. There is no row limit.
 export async function listVehicleOptions(storeCode) {
-  const free = { status: { $in: ["Available", "Inactive"] } };
-  const store = storeCode ? await Store.findOne({ code: storeCode }).select("_id") : null;
-  const filter = store ? { $or: [free, { hub: store._id }] } : free;
-  const vehicles = await withRefs(Vehicle.find(filter).sort({ createdAt: -1 }).limit(store ? 0 : 12));
+  const store = storeCode ? await Store.findOne({ code: storeCode }).select("_id name").lean() : null;
+  const vehicles = await withRefs(Vehicle.find().sort({ code: 1 })); // full fleet, including ones already assigned
   return vehicles.map((vehicle) => {
     const kg = Number(String(vehicle.capacity).replace(/[^\d]/g, "")) || 0;
-    const hub = vehicle.hub?.shortName || vehicle.hub?.name || vehicle.hubDetails?.name || "";
+    const hubName = vehicle.hub?.name || vehicle.hubDetails?.name || "";
+    const hubCode = vehicle.hub?.code || "";
+    const atThisStore = Boolean(store && vehicle.hub && String(vehicle.hub._id) === String(store._id));
+    const takenElsewhere = Boolean(vehicle.hub && !atThisStore);
+    const draft = Boolean(vehicle.isDraft);
     return {
       id: vehicle.code,
       label: vehicle.type,
+      plate: vehicle.plate || "",
+      status: vehicle.status,
       capacity: `${Math.max(8, Math.round(kg / 100))} m³`, // rough volume estimate, same rule the frontend used
       model: vehicle.model || "—",
-      location: `Available at ${hub.replace(/ (Hub|Store|Center)$/, "")}`,
+      hub: hubName,
+      hubCode,
+      selectable: !takenElsewhere && !draft, // free, or already based at the store being edited
+      assignment: draft ? "draft" : atThisStore ? "this-store" : takenElsewhere ? "other-store" : "available",
+      location: draft ? "Draft — finish the vehicle before assigning it" : atThisStore ? "Assigned to this store" : takenElsewhere ? `Assigned to ${hubName}` : "Available",
     };
   });
 }

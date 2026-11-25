@@ -30,9 +30,9 @@ export default function AssignedFleetVehicles({
 
       <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-sm font-semibold text-slate-800">Initial Dedicated Fleet Allocation</p>
+          <p className="text-sm font-semibold text-slate-800">Fleet allocation</p>
           <p className="mt-0.5 text-xs text-slate-500">
-            Select units that will operate from this store on induction.
+            Every vehicle is listed. Only available vehicles, plus those already based here, can be selected. A vehicle belongs to one store at a time.
           </p>
         </div>
         <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700 ring-1 ring-inset ring-blue-100">
@@ -47,20 +47,28 @@ export default function AssignedFleetVehicles({
       {!loading && loadError && <p className="py-4 text-sm text-red-600">{loadError}</p>}
       {!loading && !loadError && fleetOptions.length === 0 && (
         <p className="py-4 text-sm text-slate-500">
-          No free vehicles found. You can save the store now and assign vehicles later.
+          No vehicles found. Add a vehicle first, then assign it here.
         </p>
       )}
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         {fleetOptions.map((vehicle) => {
           const isSelected = selectedIds.includes(vehicle.id);
+          // Vehicles based at another store stay visible but cannot be taken
+          const locked = vehicle.selectable === false && !isSelected;
+          const locationClass =
+            vehicle.assignment === "other-store"
+              ? "text-amber-700"
+              : vehicle.assignment === "this-store" || isSelected
+                ? "text-blue-700"
+                : "text-emerald-600";
 
           return (
             <button
               key={vehicle.id}
               type="button"
-              disabled={disabled}
-              onClick={() => onToggle(vehicle.id)}
+              disabled={disabled || locked}
+              onClick={() => !locked && onToggle(vehicle.id)}
               className={[
                 "rounded-xl border p-4 text-left transition",
                 "hover:shadow-sm",
@@ -88,7 +96,7 @@ export default function AssignedFleetVehicles({
               <p className="mt-1 text-xs text-slate-500">
                 Capacity: {vehicle.capacity} • {vehicle.model}
               </p>
-              <p className="mt-2 text-xs font-medium text-emerald-600">{vehicle.location}</p>
+              <p className={`mt-2 text-xs font-medium ${locationClass}`}>{vehicle.location || "Available"}</p>
             </button>
           );
         })}

@@ -4,13 +4,14 @@ import {
   AlertCircle,
   CheckCircle2,
   ClipboardList,
-  Download,
+  Package,
+  PackageCheck,
   Plus,
   Route,
   Search,
   Truck,
 } from "lucide-react";
-import { getDashboard } from "../api/dashboardApi";
+import { getDashboard, parseDashboardError } from "../api/dashboardApi";
 import { TRIP_STATUS_DOT } from "../utils/constants";
 import { formatLongDate, formatNumber, formatShortDateTime } from "../utils/formatters";
 
@@ -22,6 +23,14 @@ const TD = "whitespace-nowrap border-t border-line px-5 py-3 tabular-nums";
 const TH_SM =
   "sticky top-0 z-10 whitespace-nowrap bg-slate-50 px-3 py-2 text-left text-xs font-medium text-mute shadow-[inset_0_-1px_0_var(--color-line)]";
 const TD_SM = "whitespace-nowrap border-t border-line px-3 py-2 text-[13px] tabular-nums";
+
+const GOODS_STATUS_LABEL = {
+  draft: "Draft",
+  prepared: "Prepared",
+  handed_over: "Handed over",
+  confirmed: "Received",
+  cancelled: "Cancelled",
+};
 
 function CardHeader({ title, subtitle, children }) {
   return (
@@ -69,12 +78,12 @@ function KpiCard({ label, value, total, note, noteClass = "text-mute", icon: Ico
 /* ---------- Trips per day (bar chart) ---------- */
 function TripsPerDayCard({ days }) {
   const peak = Math.max(...days.map((d) => d.onTime + d.delayed), 0);
-  const max = Math.max(16, Math.ceil(peak / 4) * 4);
+  const max = Math.max(16, Math.ceil(peak / 4) * 4) || 16;
   const ticks = [0, 1, 2, 3, 4].map((i) => (max / 4) * i);
 
   return (
     <section className={CARD}>
-      <CardHeader title="Trips per day" subtitle="Last 7 days">
+      <CardHeader title="Trips per day" subtitle="Last 7 days · this store">
         <div className="flex gap-4 text-[13px] text-mute">
           <span className="flex items-center gap-1.5">
             <i className="h-2 w-2 rounded-sm bg-brand" /> On time
@@ -115,7 +124,6 @@ function TripsPerDayCard({ days }) {
                     />
                   </div>
 
-                  {/* Hover tooltip for stacked day totals */}
                   <div
                     role="tooltip"
                     className="pointer-events-none invisible absolute left-1/2 z-20 w-36 -translate-x-1/2 rounded-lg border border-line bg-white px-3 py-2 text-[13px] opacity-0 shadow-lg transition-opacity group-hover:visible group-hover:opacity-100"
@@ -154,21 +162,24 @@ function TripsPerDayCard({ days }) {
   );
 }
 
-/* ---------- Fleet status ---------- */
-function FleetStatusCard({ fleet, total }) {
+/* ---------- Goods confirmation status ---------- */
+function GoodsStatusCard({ goods, outstanding }) {
   const rows = [
-    { label: "On trip", value: fleet.onTrip, color: "bg-brand" },
-    { label: "Loading or unloading", value: fleet.loading, color: "bg-warn" },
-    { label: "Available", value: fleet.available, color: "bg-ok" },
-    { label: "In maintenance", value: fleet.maintenance, color: "bg-slate-400" },
+    { label: "To prepare", value: goods.toPrepare, color: "bg-slate-400" },
+    { label: "Awaiting handover", value: goods.handover, color: "bg-violet-500" },
+    { label: "Awaiting receipt", value: goods.receiving, color: "bg-amber-500" },
+    { label: "Handed over (outbound)", value: goods.handedOver, color: "bg-brand" },
+    { label: "Received (inbound)", value: goods.received, color: "bg-ok" },
   ];
+  const total = rows.reduce((sum, r) => sum + r.value, 0) || 1;
+
   return (
     <section className={CARD}>
-      <CardHeader title="Fleet status" subtitle={`${total} vehicles`} />
+      <CardHeader title="Goods confirmation" subtitle={`${outstanding} outstanding for this store`} />
       <div className="px-5 pb-5 pt-5">
         <div className="mb-4 flex h-2 gap-0.5 overflow-hidden rounded">
           {rows.map((r) => (
-            <div key={r.label} className={r.color} style={{ flex: r.value }} />
+            <div key={r.label} className={r.color} style={{ flex: Math.max(r.value, 0) || 0.0001 }} />
           ))}
         </div>
         {rows.map((r) => (
@@ -180,6 +191,7 @@ function FleetStatusCard({ fleet, total }) {
             <b className="font-medium tabular-nums">{r.value}</b>
           </div>
         ))}
+        <p className="mt-2 text-[12px] text-mute">{total === 1 && outstanding === 0 ? "No open goods work right now." : "Counts use bookings and confirmations for this store only."}</p>
       </div>
     </section>
   );
@@ -193,7 +205,6 @@ function TodayTripsCard({ trips, tripCount, globalQuery }) {
   const [tab, setTab] = useState("All");
   const [query, setQuery] = useState("");
 
-  // Trips that match the top bar search
   const base = useMemo(
     () =>
       trips.filter(
@@ -223,7 +234,7 @@ function TodayTripsCard({ trips, tripCount, globalQuery }) {
 
   return (
     <section className={CARD}>
-      <CardHeader title="Today's trips" subtitle="Planned and live trips for this store">
+      <CardHeader title="Today's trips" subtitle="Planned and live trips stopping at this store">
         <div className="relative w-55 shrink-0">
           <Search size={15} className="absolute left-2.5 top-2.25 text-mute" />
           <input
@@ -319,13 +330,13 @@ function TodayTripsCard({ trips, tripCount, globalQuery }) {
 
 /* ---------- Loading slots ---------- */
 function LoadingSlotsCard({ slots }) {
-  const full = slots.find((s) => s.booked / s.total > 0.85);
+  const full = slots.find((s) => s.total > 0 && s.booked / s.total > 0.85);
   return (
     <section className={CARD}>
-      <CardHeader title="Loading slots" subtitle="Booked slots today" />
+      <CardHeader title="Loading slots" subtitle="Booked slots today at this store" />
       <div className="space-y-4 px-5 pb-5 pt-5">
         {slots.map((s) => {
-          const ratio = s.booked / s.total;
+          const ratio = s.total ? s.booked / s.total : 0;
           return (
             <div key={s.store}>
               <div className="mb-1.5 flex justify-between text-sm font-medium">
@@ -337,15 +348,18 @@ function LoadingSlotsCard({ slots }) {
               <div className="h-1.5 overflow-hidden rounded bg-slate-100">
                 <div
                   className={`h-full rounded ${ratio > 0.85 ? "bg-warn" : "bg-brand"}`}
-                  style={{ width: `${ratio * 100}%` }}
+                  style={{ width: `${Math.min(ratio, 1) * 100}%` }}
                 />
               </div>
             </div>
           );
         })}
+        {slots.every((s) => s.total === 0) && (
+          <p className="text-[13px] text-mute">No loading slots are scheduled for today.</p>
+        )}
         {full && (
           <p className="pt-1 text-[13px] text-mute">
-            {full.store.split(" –")[0]} is almost full. New bookings may move to the next free slot.
+            This store is almost full. New bookings may move to the next free slot.
           </p>
         )}
       </div>
@@ -353,15 +367,15 @@ function LoadingSlotsCard({ slots }) {
   );
 }
 
-/* ---------- Bookings awaiting approval ---------- */
-function PendingApprovalsCard({ bookings, globalQuery }) {
+/* ---------- Bookings awaiting admin approval ---------- */
+function PendingBookingsCard({ bookings, globalQuery }) {
   const navigate = useNavigate();
   const shown = bookings.filter(
     (b) => !globalQuery || [b.id, b.route].join(" ").toLowerCase().includes(globalQuery)
   );
   return (
     <section className={CARD}>
-      <CardHeader title="Bookings awaiting approval" subtitle={`${bookings.length} requests need a decision`}>
+      <CardHeader title="Bookings awaiting approval" subtitle={`${bookings.length} request${bookings.length === 1 ? "" : "s"} from this store`}>
         <button
           type="button"
           onClick={() => navigate("/bookings?status=Pending")}
@@ -402,7 +416,7 @@ function PendingApprovalsCard({ bookings, globalQuery }) {
                     onClick={() => navigate(`/bookings/${b.id}`)}
                     className="h-7 rounded-md border border-line px-3 text-[13px] font-medium hover:bg-slate-50"
                   >
-                    Review
+                    View
                   </button>
                 </td>
               </tr>
@@ -411,7 +425,7 @@ function PendingApprovalsCard({ bookings, globalQuery }) {
               <tr>
                 <td colSpan={6} className="px-5 py-8 text-center text-mute">
                   {bookings.length === 0
-                    ? "No bookings are waiting for approval."
+                    ? "No bookings from this store are waiting for approval."
                     : "No bookings match your search."}
                 </td>
               </tr>
@@ -420,6 +434,78 @@ function PendingApprovalsCard({ bookings, globalQuery }) {
         </table>
       </div>
     </section>
+  );
+}
+
+/* ---------- Recent bookings + goods activity ---------- */
+function RecentActivityCards({ bookings, goods, globalQuery }) {
+  const navigate = useNavigate();
+  const bookingRows = bookings.filter(
+    (b) => !globalQuery || [b.id, b.route, b.status].join(" ").toLowerCase().includes(globalQuery)
+  );
+  const goodsRows = goods.filter(
+    (g) => !globalQuery || [g.id, g.trip, g.status, g.by].join(" ").toLowerCase().includes(globalQuery)
+  );
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-2">
+      <section className={CARD}>
+        <CardHeader title="Recent bookings" subtitle="Latest activity for this store">
+          <button type="button" onClick={() => navigate("/bookings")} className="h-8 rounded-md border border-line px-3 text-[13px] font-medium hover:bg-slate-50">
+            All bookings
+          </button>
+        </CardHeader>
+        <ul className="divide-y divide-line px-5 py-2">
+          {bookingRows.map((b) => (
+            <li key={b.id} className="flex items-center justify-between gap-3 py-3 text-sm">
+              <div className="min-w-0">
+                <p className="font-medium tabular-nums">
+                  {b.id}
+                  {b.urgent && <span className="ml-2 text-xs font-medium text-bad">Urgent</span>}
+                </p>
+                <p className="truncate text-[13px] text-mute">{b.route} · {formatNumber(b.units)} units</p>
+              </div>
+              <div className="shrink-0 text-right">
+                <p className="text-[13px] font-medium">{b.status}</p>
+                <p className="text-[12px] text-mute">{b.updatedAt ? formatShortDateTime(b.updatedAt) : "–"}</p>
+              </div>
+            </li>
+          ))}
+          {bookingRows.length === 0 && <li className="py-8 text-center text-sm text-mute">No recent bookings.</li>}
+        </ul>
+      </section>
+
+      <section className={CARD}>
+        <CardHeader title="Recent goods confirmations" subtitle="Preparation, handover and receipt">
+          <button type="button" onClick={() => navigate("/goods-confirmation")} className="h-8 rounded-md border border-line px-3 text-[13px] font-medium hover:bg-slate-50">
+            Open queue
+          </button>
+        </CardHeader>
+        <ul className="divide-y divide-line px-5 py-2">
+          {goodsRows.map((g) => (
+            <li key={`${g.id}-${g.at}`} className="flex items-center justify-between gap-3 py-3 text-sm">
+              <div className="min-w-0">
+                <p className="font-medium tabular-nums">
+                  {g.id}
+                  {g.trip ? <span className="ml-2 text-[12px] font-normal text-mute">{g.trip}</span> : null}
+                </p>
+                <p className="truncate text-[13px] text-mute">
+                  {g.action}
+                  {g.stage ? ` · ${g.stage}` : ""}
+                  {g.by ? ` · ${g.by}` : ""}
+                  {g.discrepancies > 0 ? ` · ${formatNumber(g.discrepancies)} discrepancy units` : ""}
+                </p>
+              </div>
+              <div className="shrink-0 text-right">
+                <p className="text-[13px] font-medium">{GOODS_STATUS_LABEL[g.status] ?? g.status}</p>
+                <p className="text-[12px] text-mute">{g.at ? formatShortDateTime(g.at) : "–"}</p>
+              </div>
+            </li>
+          ))}
+          {goodsRows.length === 0 && <li className="py-8 text-center text-sm text-mute">No goods confirmation activity yet.</li>}
+        </ul>
+      </section>
+    </div>
   );
 }
 
@@ -437,8 +523,8 @@ export default function Dashboard() {
     setError("");
     try {
       setData(await getDashboard());
-    } catch {
-      setError("We could not load the dashboard. Check your connection and try again.");
+    } catch (err) {
+      setError(parseDashboardError(err));
     } finally {
       setLoading(false);
     }
@@ -455,15 +541,19 @@ export default function Dashboard() {
       <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-[22px] font-semibold leading-tight tracking-tight">Dashboard</h1>
-          <p className="text-sm text-mute">{formatLongDate()}</p>
+          <p className="text-sm text-mute">
+            {formatLongDate()}
+            {data?.store?.name ? ` · ${data.store.name}` : ""}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <button
             type="button"
+            onClick={() => navigate("/goods-confirmation")}
             className="inline-flex h-9 items-center gap-1.5 rounded-md border border-line bg-white px-3 text-[13px] font-medium hover:bg-slate-50"
           >
-            <Download size={15} strokeWidth={1.8} />
-            Export
+            <PackageCheck size={15} strokeWidth={1.8} />
+            Goods confirmation
           </button>
           <button
             type="button"
@@ -471,7 +561,7 @@ export default function Dashboard() {
             className="inline-flex h-9 items-center gap-1.5 rounded-md bg-brand px-3 text-[13px] font-medium text-white hover:brightness-110"
           >
             <Plus size={15} strokeWidth={2} />
-            New Trip
+            New booking
           </button>
         </div>
       </div>
@@ -491,58 +581,90 @@ export default function Dashboard() {
 
       {!error && loading && !data && <p className="py-10 text-center text-mute">Loading dashboard…</p>}
 
-      {!error && data && (
+      {!error && data && k && (
         <>
           <div className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-5">
             <KpiCard
-              label="Active vehicles"
-              value={k.activeVehicles}
-              total={k.totalVehicles}
-              note={`${k.availableVehicles} available to assign`}
-              icon={Truck}
+              label="Store bookings"
+              value={k.totalBookings}
+              note={`${k.approvedBookings} approved · ${k.completedBookings} completed`}
+              icon={ClipboardList}
               tone="blue"
-              onClick={() => navigate("/trip-progress")}
+              onClick={() => navigate("/bookings")}
             />
             <KpiCard
-              label="Today's trips"
-              value={k.todayTrips}
-              note={`+${k.tripsChangePercent}% vs yesterday`}
-              noteClass="text-ok"
-              icon={Route}
-              tone="violet"
-              onClick={() => navigate("/trip-progress")}
-            />
-            <KpiCard
-              label="Pending bookings"
+              label="Pending approval"
               value={k.pendingBookings}
-              note={`Oldest waiting ${k.oldestPendingHours} h`}
+              note={k.pendingBookings ? `Oldest waiting ${k.oldestPendingHours} h` : "Nothing waiting"}
               icon={ClipboardList}
               tone="amber"
               onClick={() => navigate("/bookings?status=Pending")}
             />
             <KpiCard
-              label="Delayed trips"
-              value={k.delayedTrips}
-              note="Over 15 min late"
-              noteClass="text-bad"
-              icon={AlertCircle}
-              tone="red"
-              onClick={() => navigate("/trip-progress?status=Delayed")}
+              label="Today's trips"
+              value={k.todayTrips}
+              note={`${k.activeTrips} active overall`}
+              icon={Route}
+              tone="violet"
+              onClick={() => navigate("/trip-progress")}
             />
             <KpiCard
-              label="Completed trips"
-              value={k.completedTrips}
-              total={k.todayTrips}
-              note="Since 6:00 AM"
+              label="Outstanding goods"
+              value={k.outstandingConfirmations}
+              note={`${k.goodsToPrepare} prepare · ${k.goodsAwaitingHandover} handover · ${k.goodsReceiving} receive`}
+              icon={Package}
+              tone="amber"
+              onClick={() => navigate("/goods-confirmation")}
+            />
+            <KpiCard
+              label="Goods discrepancies"
+              value={formatNumber(k.discrepancies)}
+              note={`${k.goodsReceived} received · ${k.delayedTrips} delayed trips today`}
+              noteClass={k.discrepancies ? "text-bad" : "text-mute"}
+              icon={AlertCircle}
+              tone="red"
+              onClick={() => navigate("/goods-confirmation")}
+            />
+          </div>
+
+          <div className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
+            <KpiCard
+              label="To prepare"
+              value={k.goodsToPrepare}
+              note="Outbound approved bookings"
+              icon={Package}
+              tone="blue"
+              onClick={() => navigate("/goods-confirmation")}
+            />
+            <KpiCard
+              label="Awaiting handover"
+              value={k.goodsAwaitingHandover}
+              note="Prepared, not yet with driver"
+              icon={Truck}
+              tone="violet"
+              onClick={() => navigate("/goods-confirmation")}
+            />
+            <KpiCard
+              label="Handed over"
+              value={k.goodsHandedOver}
+              note={`${k.goodsReceiving} inbound awaiting receipt`}
+              icon={PackageCheck}
+              tone="amber"
+              onClick={() => navigate("/goods-confirmation")}
+            />
+            <KpiCard
+              label="Received"
+              value={k.goodsReceived}
+              note={`${k.hubVehicles} hub vehicles · ${k.availableVehicles} available`}
               icon={CheckCircle2}
               tone="green"
-              onClick={() => navigate("/trip-progress?status=Completed")}
+              onClick={() => navigate("/goods-confirmation")}
             />
           </div>
 
           <div className="mb-4 grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
             <TripsPerDayCard days={data.tripsPerDay} />
-            <FleetStatusCard fleet={data.fleetStatus} total={k.totalVehicles} />
+            <GoodsStatusCard goods={data.goodsStatus} outstanding={k.outstandingConfirmations} />
           </div>
 
           <div className="mb-4 grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(280px,1fr)]">
@@ -550,7 +672,11 @@ export default function Dashboard() {
             <LoadingSlotsCard slots={data.loadingSlots} />
           </div>
 
-          <PendingApprovalsCard bookings={data.pendingBookings} globalQuery={globalQuery} />
+          <div className="mb-4">
+            <PendingBookingsCard bookings={data.pendingBookings} globalQuery={globalQuery} />
+          </div>
+
+          <RecentActivityCards bookings={data.recentBookings} goods={data.recentGoods} globalQuery={globalQuery} />
         </>
       )}
     </div>

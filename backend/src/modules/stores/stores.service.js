@@ -4,6 +4,7 @@ import Booking from "../bookings/bookings.model.js";
 import User from "../users/users.model.js";
 import Item from "../items/items.model.js";
 import ApiError from "../../utils/ApiError.js";
+import runInTransaction from "../../utils/transaction.js";
 
 // Business logic and database access for stores lives here.
 // Controllers call these functions. Keep req and res out of this file.
@@ -119,15 +120,40 @@ function assertComplete(store) {
   if (errors.length) throw ApiError.unprocessable("Please check the highlighted fields.", { errors });
 }
 
-// Make `codes` the vehicles based at this store: they move here, and vehicles no longer listed are released
+// Make `codes` the vehicles based at this store. A vehicle can belong to only one store:
+// one already based elsewhere is rejected, vehicles dropped from the list are released (hub cleared, record kept).
 async function allocateVehicles(store, codes) {
-  const vehicles = await Vehicle.find({ code: { $in: codes } }).select("_id code");
-  const missing = codes.filter((code) => !vehicles.some((v) => v.code === code));
-  if (missing.length) throw invalid("assignedVehicles", `Vehicle ${missing.join(", ")} was not found.`);
+  const unique = [...new Set(codes)];
+  await runInTransaction(async (session) => {
+    const vehicles = await Vehicle.find({ code: { $in: unique } }).select("_id code hub isDraft").session(session);
+    const missing = unique.filter((code) => !vehicles.some((v) => v.code === code));
+    if (missing.length) throw invalid("assignedVehicles", `Vehicle ${missing.join(", ")} was not found.`);
 
-  const ids = vehicles.map((v) => v._id);
-  await Vehicle.updateMany({ hub: store._id, _id: { $nin: ids } }, { $set: { hub: null } });
-  if (ids.length) await Vehicle.updateMany({ _id: { $in: ids } }, { $set: { hub: store._id, hubDetails: {} } });
+    const drafts = vehicles.filter((v) => v.isDraft).map((v) => v.code);
+    if (drafts.length) throw invalid("assignedVehicles", `Finish ${drafts.join(", ")} before assigning it to a store.`);
+
+    // Refuse a vehicle whose hub is a different store (do not move it away from that store)
+    const taken = vehicles.filter((v) => v.hub && String(v.hub) !== String(store._id));
+    if (taken.length) {
+      throw invalid("assignedVehicles", `${taken.map((v) => v.code).join(", ")} is already assigned to another store.`);
+    }
+
+    const ids = vehicles.map((v) => v._id);
+    // Release vehicles that used to be based here but are no longer selected (the vehicle record stays)
+    await Vehicle.updateMany({ hub: store._id, _id: { $nin: ids } }, { $set: { hub: null } }, { session });
+    if (!ids.length) return;
+
+    // Claim only vehicles that are still free or already here, so two stores cannot take the same one together
+    await Vehicle.updateMany(
+      { _id: { $in: ids }, $or: [{ hub: null }, { hub: { $exists: false } }, { hub: store._id }] },
+      { $set: { hub: store._id, hubDetails: {} } },
+      { session }
+    );
+    const claimed = await Vehicle.countDocuments({ _id: { $in: ids }, hub: store._id }).session(session);
+    if (claimed !== ids.length) {
+      throw invalid("assignedVehicles", "A vehicle was just assigned to another store. Reload and try again.");
+    }
+  });
 }
 
 // POST /stores: create a store, or complete an earlier draft saved with the same code

@@ -190,8 +190,10 @@ export default function AddStore() {
     clearFieldError("operationalStatus");
   };
 
-  // Toggle a vehicle id into or out of the assigned fleet list
+  // Toggle a vehicle into or out of this store. Vehicles based at another store cannot be added.
   const handleVehicleToggle = (vehicleId) => {
+    const option = fleetOptions.find((vehicle) => vehicle.id === vehicleId);
+    if (option?.selectable === false && !formData.assignedVehicles.includes(vehicleId)) return;
     dismissSuccess();
     setFormData((prev) => {
       const exists = prev.assignedVehicles.includes(vehicleId);
