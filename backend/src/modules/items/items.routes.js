@@ -1,6 +1,8 @@
 import { Router } from "express";
 import * as controller from "./items.controller.js";
 import validate from "../../middleware/validate.js";
+import audit from "../../middleware/audit.js";
+import { getItem } from "./items.service.js";
 import { createItemSchema, updateItemSchema } from "./items.schema.js";
 
 const router = Router();
@@ -11,8 +13,8 @@ router.get("/", controller.catalog);                           // GET   /api/ite
 router.get("/records", controller.records);                    // GET   /api/items/records   -> rows for the Items table
 router.get("/next-code", controller.nextCode);                 // GET   /api/items/next-code -> { code }
 router.get("/:id", controller.getOne);                         // GET   /api/items/:id       one item by code (keep after the fixed paths above)
-router.post("/", validate({ body: createItemSchema }), controller.create);       // POST  /api/items           create or save as draft ({ ...record, asDraft })
-router.patch("/:id", validate({ body: updateItemSchema }), controller.update);   // PATCH /api/items/:id
-router.delete("/:id", controller.remove);                      // DELETE /api/items/:id -> { id, message }
+router.post("/", validate({ body: createItemSchema }), audit({ entity: "Item", action: "CREATE" }), controller.create);       // POST  /api/items           create or save as draft ({ ...record, asDraft })
+router.patch("/:id", validate({ body: updateItemSchema }), audit({ entity: "Item", action: "UPDATE", load: (req) => getItem(req.params.id) }), controller.update);   // PATCH /api/items/:id
+router.delete("/:id", audit({ entity: "Item", action: "DELETE", load: (req) => getItem(req.params.id) }), controller.remove);                      // DELETE /api/items/:id -> { id, message }
 
 export default router;

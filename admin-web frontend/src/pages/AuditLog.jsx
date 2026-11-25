@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   AlertCircle,
@@ -15,7 +15,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { getAuditLogs, recordAuditExport } from "../api/auditApi";
+import { getAuditFilters, getAuditLog, getAuditLogs, parseAuditError, recordAuditExport } from "../api/auditApi";
 import { ROLE_LABELS } from "../utils/roles";
 import { getInitials } from "../utils/formatters";
 import { downloadCsv } from "../utils/exportCsv";
@@ -35,7 +35,10 @@ const ACTIONS = {
   LOGIN_FAILED: ["Failed sign-in", "bg-red-50 text-red-700"],
   CREATE: ["Create", "bg-green-50 text-green-700"],
   UPDATE: ["Update", "bg-violet-50 text-violet-700"],
+  DELETE: ["Delete", "bg-red-50 text-red-700"],
   APPROVE: ["Approve", "bg-green-50 text-green-700"],
+  REJECT: ["Reject", "bg-red-50 text-red-700"],
+  REQUEST_CHANGES: ["Request changes", "bg-amber-50 text-amber-700"],
   ASSIGN: ["Assign", "bg-violet-50 text-violet-700"],
   CANCEL: ["Cancel", "bg-amber-50 text-amber-700"],
   ROLE_CHANGE: ["Role change", "bg-amber-50 text-amber-700"],
@@ -44,8 +47,15 @@ const ACTIONS = {
   EXPORT: ["Export", "bg-slate-100 text-slate-600"],
 };
 
-const DATA_ACTIONS = ["CREATE", "UPDATE", "APPROVE", "ASSIGN", "CANCEL"];
-const ACCESS_ACTIONS = ["ROLE_CHANGE", "DEACTIVATE", "ACTIVATE"];
+// Modules that are always offered in the module filter, even before they have any entries
+const BASE_MODULES = ["Booking", "Item", "Report", "Session", "Store", "Vehicle"];
+
+// Wait this long after typing before searching (ms)
+const SEARCH_DELAY = 350;
+
+// CSV export downloads up to EXPORT_PAGE_SIZE x EXPORT_MAX_PAGES entries
+const EXPORT_PAGE_SIZE = 500;
+const EXPORT_MAX_PAGES = 20;
 
 const PRESETS = [
   ["today", "Today"],
@@ -58,7 +68,7 @@ const COLUMNS = [
   { key: "ts", label: "Timestamp", sortable: true },
   { key: "userName", label: "User", sortable: true },
   { key: "action", label: "Action", sortable: true },
-  { key: "entity", label: "Record", sortable: true },
+  { key: "entity", label: "Module / record", sortable: true },
   { key: "details", label: "Details" },
   { key: "ip", label: "IP address" },
 ];
@@ -145,7 +155,11 @@ function Kpi({ icon: Icon, tone, label, value, foot, footClass = "text-mute" }) 
 }
 
 // Side panel with the full entry and before/after values
-function DetailDrawer({ entry, onClose }) {
+function DetailDrawer({ entry: listed, onClose }) {
+  // The row already has the entry; the full record is loaded from the backend to show the request details
+  const [loaded, setLoaded] = useState(null);
+  const entry = loaded?.id === listed.id ? loaded : listed;
+
   // Close with the Escape key
   useEffect(() => {
     const onKey = (e) => e.key === "Escape" && onClose();
@@ -153,13 +167,29 @@ function DetailDrawer({ entry, onClose }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  useEffect(() => {
+    let active = true;
+    getAuditLog(listed.id)
+      .then((record) => active && setLoaded(record))
+      .catch(() => {
+        // Keep showing the row data when the extra details cannot be loaded
+      });
+    return () => {
+      active = false;
+    };
+  }, [listed.id]);
+
   const changes = entry.changes ?? [];
+  const request = entry.request;
   const rows = [
     ["Entry ID", entry.id],
     ["When", `${new Date(entry.ts).toLocaleString("en-GB")} (${timeAgo(entry.ts)})`],
     ["Performed by", `${entry.userName}${entry.role ? ` · ${ROLE_LABELS[entry.role] ?? entry.role}` : ""}`],
-    ["IP address", entry.ip],
-    ["Description", entry.details],
+    ["Module", entry.entity],
+    ["Record ID", entry.entityId],
+    ["IP address", entry.ip || "—"],
+    ...(request?.method ? [["Request", `${request.method} ${request.path}`]] : []),
+    ["Description", entry.details || "—"],
   ];
 
   return (
@@ -235,13 +265,16 @@ function DetailDrawer({ entry, onClose }) {
 export default function AuditLog() {
   const [params] = useSearchParams();
 
+  // The current page of entries from the backend: { entries, total, summary }
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  // Users and modules for the filter dropdowns
+  const [filterOptions, setFilterOptions] = useState({ users: [], entities: [] });
 
   // Deep links like ?entity=User&q=U003 and the top bar search
   const deepQuery = params.get("q") ?? "";
-  const globalQuery = (params.get("search") ?? "").trim().toLowerCase();
+  const globalQuery = (params.get("search") ?? "").trim();
 
   const [query, setQuery] = useState(deepQuery);
   const [user, setUser] = useState("");
@@ -254,63 +287,80 @@ export default function AuditLog() {
   const [selected, setSelected] = useState(null);
   const [notice, setNotice] = useState("");
 
+  // Search text sent to the backend, only updated after the user stops typing
+  const [search, setSearch] = useState(deepQuery || globalQuery);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearch(query.trim() || globalQuery);
+      setPage(1);
+    }, SEARCH_DELAY);
+    return () => clearTimeout(timer);
+  }, [query, globalQuery]);
+
+  // Every active filter, in the form the backend expects (dates become full-day ISO timestamps)
+  const criteria = useMemo(
+    () => ({
+      q: search,
+      actor: user,
+      action,
+      entity,
+      from: range[0] ? new Date(`${range[0]}T00:00:00`).toISOString() : "",
+      to: range[1] ? new Date(`${range[1]}T23:59:59.999`).toISOString() : "",
+      sort: sort.key,
+      dir: sort.dir === 1 ? "asc" : "desc",
+    }),
+    [search, user, action, entity, range, sort]
+  );
+
+  // Only the latest request may update the table (older, slower responses are ignored)
+  const requestId = useRef(0);
   const load = useCallback(async () => {
+    const id = ++requestId.current;
     setLoading(true);
     setError("");
     try {
-      setData(await getAuditLogs());
-    } catch {
-      setError("We could not load the audit history. Check your connection and try again.");
+      const result = await getAuditLogs({ ...criteria, page, limit: PAGE_SIZE });
+      if (id === requestId.current) setData(result);
+    } catch (err) {
+      if (id === requestId.current) setError(parseAuditError(err));
     } finally {
-      setLoading(false);
+      if (id === requestId.current) setLoading(false);
     }
-  }, []);
+  }, [criteria, page]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  const all = data ?? [];
+  // Load the user and module dropdown options once (and again after an export adds new entries)
+  const loadFilterOptions = useCallback(() => {
+    getAuditFilters()
+      .then(setFilterOptions)
+      .catch(() => {
+        // The dropdowns stay with what they had; the table shows its own error
+      });
+  }, []);
 
-  // Options for the user and record type dropdowns come from the data itself
-  const people = useMemo(
-    () =>
-      [...new Map(all.filter((a) => a.userId !== "—").map((a) => [a.userId, a.userName])).entries()].sort((a, b) =>
-        a[1].localeCompare(b[1])
-      ),
-    [all]
-  );
-  const entities = useMemo(() => [...new Set(all.map((a) => a.entity))].sort(), [all]);
+  useEffect(() => {
+    loadFilterOptions();
+  }, [loadFilterOptions]);
 
-  // Apply every filter, then sort
-  const rows = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const from = range[0] ? new Date(`${range[0]}T00:00:00`).getTime() : -Infinity;
-    const to = range[1] ? new Date(`${range[1]}T23:59:59.999`).getTime() : Infinity;
+  const people = filterOptions.users;
+  const entities = useMemo(() => [...new Set([...BASE_MODULES, ...(filterOptions.entities ?? [])])].sort(), [filterOptions]);
 
-    const list = all.filter((a) => {
-      const t = new Date(a.ts).getTime();
-      if (t < from || t > to) return false;
-      if (user && a.userId !== user) return false;
-      if (action && a.action !== action) return false;
-      if (entity && a.entity !== entity) return false;
-      const text = [a.userName, a.entityId, a.details, a.entity, a.ip, actionLabel(a.action)].join(" ").toLowerCase();
-      return (!q || text.includes(q)) && (!globalQuery || text.includes(globalQuery));
-    });
+  const rows = data?.entries ?? [];
+  const total = data?.total ?? 0;
+  const summary = data?.summary ?? { events: 0, activeUsers: 0, dataChanges: 0, accessChanges: 0, failedLogins: 0 };
+  const failed = summary.failedLogins;
 
-    return list.sort((a, b) => {
-      const x = sort.key === "ts" ? new Date(a.ts).getTime() : String(a[sort.key]).toLowerCase();
-      const y = sort.key === "ts" ? new Date(b.ts).getTime() : String(b[sort.key]).toLowerCase();
-      return (x > y ? 1 : x < y ? -1 : 0) * sort.dir;
-    });
-  }, [all, query, user, action, entity, range, sort, globalQuery]);
-
-  const count = (list) => rows.filter((a) => list.includes(a.action)).length;
-  const failed = count(["LOGIN_FAILED"]);
-
-  const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const current = Math.min(page, pageCount);
-  const visible = rows.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE);
+  const visible = rows;
+
+  // If the result shrinks below the current page (for example after new filters), go back to the last page
+  useEffect(() => {
+    if (data && page > pageCount) setPage(pageCount);
+  }, [data, page, pageCount]);
 
   // Any filter change sends the table back to page 1
   const filter = (setter) => (value) => {
@@ -338,18 +388,35 @@ export default function AuditLog() {
     applyPreset("30d");
   };
 
-  const toggleSort = (key) => setSort((s) => (s.key === key ? { key, dir: -s.dir } : { key, dir: 1 }));
+  // A new column starts descending for the timestamp and ascending for text columns
+  const toggleSort = (key) => setSort((s) => (s.key === key ? { key, dir: -s.dir } : { key, dir: key === "ts" ? -1 : 1 }));
 
-  // Download the filtered rows and log the export itself
+  // Download every entry matching the filters (fetched in pages) and log the export itself
+  const [exporting, setExporting] = useState(false);
   const exportCsv = async () => {
-    exportAuditCsv(`audit-history_${dayKey(new Date())}.csv`, rows);
-    setNotice(`Export ready. ${rows.length} audit entries exported.`);
-    setTimeout(() => setNotice(""), 4000);
+    setExporting(true);
+    setNotice("");
     try {
-      await recordAuditExport(rows.length);
-      setData(await getAuditLogs());
-    } catch {
-      // The file is already downloaded, so a logging failure should not block the user
+      const all = [];
+      for (let next = 1; next <= EXPORT_MAX_PAGES; next += 1) {
+        const result = await getAuditLogs({ ...criteria, page: next, limit: EXPORT_PAGE_SIZE });
+        all.push(...result.entries);
+        if (all.length >= result.total || result.entries.length === 0) break;
+      }
+      exportAuditCsv(`audit-history_${dayKey(new Date())}.csv`, all);
+      setNotice(`Export ready. ${all.length} audit entries exported.`);
+      setTimeout(() => setNotice(""), 4000);
+      try {
+        await recordAuditExport(all.length);
+        load();
+        loadFilterOptions();
+      } catch {
+        // The file is already downloaded, so a logging failure should not block the user
+      }
+    } catch (err) {
+      setError(parseAuditError(err, "We could not export the audit history. Try again."));
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -363,10 +430,10 @@ export default function AuditLog() {
         <button
           type="button"
           onClick={exportCsv}
-          disabled={!data || rows.length === 0}
+          disabled={!data || total === 0 || exporting}
           className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md bg-brand px-4 text-[13px] font-medium text-white hover:brightness-110 disabled:opacity-60"
         >
-          <Download size={15} strokeWidth={2} /> Export CSV
+          <Download size={15} strokeWidth={2} /> {exporting ? "Exporting…" : "Export CSV"}
         </button>
       </div>
 
@@ -394,10 +461,10 @@ export default function AuditLog() {
       {!error && data && (
         <>
           <div className="mb-4 grid grid-cols-2 gap-4 lg:grid-cols-5">
-            <Kpi icon={History} tone="bg-blue-50 text-blue-600" label="Events" value={rows.length} foot="in selected range" />
-            <Kpi icon={Users} tone="bg-violet-50 text-violet-600" label="Active users" value={new Set(rows.map((a) => a.userId)).size} foot="performed at least one action" />
-            <Kpi icon={Pencil} tone="bg-green-50 text-green-600" label="Data changes" value={count(DATA_ACTIONS)} foot="bookings, trips, vehicles, slots" />
-            <Kpi icon={ShieldCheck} tone="bg-amber-50 text-amber-600" label="Access changes" value={count(ACCESS_ACTIONS)} foot="roles & account status" />
+            <Kpi icon={History} tone="bg-blue-50 text-blue-600" label="Events" value={summary.events} foot="in selected range" />
+            <Kpi icon={Users} tone="bg-violet-50 text-violet-600" label="Active users" value={summary.activeUsers} foot="performed at least one action" />
+            <Kpi icon={Pencil} tone="bg-green-50 text-green-600" label="Data changes" value={summary.dataChanges} foot="vehicles, stores, items, bookings" />
+            <Kpi icon={ShieldCheck} tone="bg-amber-50 text-amber-600" label="Access changes" value={summary.accessChanges} foot="roles & account status" />
             <Kpi
               icon={AlertCircle}
               tone="bg-red-50 text-red-600"
@@ -420,7 +487,7 @@ export default function AuditLog() {
               />
               <select value={user} onChange={(e) => filter(setUser)(e.target.value)} aria-label="Filter by user" className={FIELD}>
                 <option value="">All users</option>
-                {people.map(([id, name]) => (
+                {people.map(({ id, name }) => (
                   <option key={id} value={id}>{name}</option>
                 ))}
               </select>
@@ -430,8 +497,8 @@ export default function AuditLog() {
                   <option key={id} value={id}>{label}</option>
                 ))}
               </select>
-              <select value={entity} onChange={(e) => filter(setEntity)(e.target.value)} aria-label="Filter by record type" className={FIELD}>
-                <option value="">All record types</option>
+              <select value={entity} onChange={(e) => filter(setEntity)(e.target.value)} aria-label="Filter by module" className={FIELD}>
+                <option value="">All modules</option>
                 {entities.map((e) => (
                   <option key={e} value={e}>{e}</option>
                 ))}
@@ -493,7 +560,7 @@ export default function AuditLog() {
                     })}
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className={loading ? "opacity-60 transition-opacity" : "transition-opacity"}>
                   {visible.map((a) => (
                     <tr
                       key={a.id}
@@ -527,13 +594,13 @@ export default function AuditLog() {
                           </span>
                         )}
                       </td>
-                      <td className={`${TD} whitespace-nowrap font-mono text-xs text-mute`}>{a.ip}</td>
+                      <td className={`${TD} whitespace-nowrap font-mono text-xs text-mute`}>{a.ip || "—"}</td>
                     </tr>
                   ))}
                   {rows.length === 0 && (
                     <tr>
                       <td colSpan={COLUMNS.length} className="px-4 py-10 text-center text-sm text-mute">
-                        No audit entries match these filters.
+                        {loading ? "Loading audit history…" : "No audit entries match these filters."}
                       </td>
                     </tr>
                   )}
@@ -543,7 +610,7 @@ export default function AuditLog() {
 
             <div className="flex items-center justify-between border-t border-line px-4 py-3 text-[13px] text-mute">
               <span>
-                Showing {rows.length === 0 ? 0 : (current - 1) * PAGE_SIZE + 1}–{Math.min(current * PAGE_SIZE, rows.length)} of {rows.length} entries
+                Showing {rows.length === 0 ? 0 : (current - 1) * PAGE_SIZE + 1}–{(current - 1) * PAGE_SIZE + rows.length} of {total} entries
               </span>
               <div className="flex items-center gap-2">
                 <button
