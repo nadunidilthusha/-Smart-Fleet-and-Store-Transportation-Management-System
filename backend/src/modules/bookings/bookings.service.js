@@ -6,6 +6,9 @@ import Trip from "../trips/trips.model.js";
 import ApiError from "../../utils/ApiError.js";
 import { notifyAdmins } from "../notifications/notifications.service.js";
 import { nextCode } from "../../utils/sequence.js";
+import runInTransaction from "../../utils/transaction.js";
+import { releaseBookingFromTrips } from "../trips/trips.service.js";
+import { assertNotHandedOver, closeConfirmationForBooking } from "../confirmation/confirmation.service.js";
 
 const pad = (n) => String(n).padStart(2, "0");
 
@@ -476,14 +479,24 @@ export async function cancelStoreBooking(code, user) {
     throw ApiError.conflict(`A booking that is "${current}" can no longer be cancelled.`);
   }
 
-  const updated = await Booking.findOneAndUpdate(
-    { _id: doc._id, status: doc.status },
-    { $set: { status: "Cancelled" }, $push: { history: { label: "Cancelled", at: new Date() } } },
-    { new: true }
-  )
-    .populate(STORE_POPULATE)
-    .lean();
-  if (!updated) throw ApiError.conflict("This booking was just changed by someone else. Reload and try again.");
+  await assertNotHandedOver(doc._id);
+
+  // Cancelling, closing the goods confirmation and revalidating the trip are saved together: all or nothing
+  const cancelled = await runInTransaction(async (session) => {
+    const result = await Booking.findOneAndUpdate(
+      { _id: doc._id, status: doc.status },
+      { $set: { status: "Cancelled" }, $push: { history: { label: "Cancelled", at: new Date() } } },
+      { new: true, session }
+    ).lean();
+    if (!result) throw ApiError.conflict("This booking was just changed by someone else. Reload and try again.");
+
+    await closeConfirmationForBooking(doc._id, { session, user, reason: "Booking cancelled" });
+    // Take the booking off its trip: trip load, route, vehicle and driver are recalculated for the bookings that remain
+    await releaseBookingFromTrips({ bookingId: doc._id, session });
+    return result;
+  });
+
+  const updated = await Booking.findById(cancelled._id).populate(STORE_POPULATE).lean();
 
   await notifyAdmins({
     type: "booking",
