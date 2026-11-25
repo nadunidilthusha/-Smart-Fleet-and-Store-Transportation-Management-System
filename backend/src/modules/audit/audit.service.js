@@ -7,8 +7,8 @@ import logger from "../../utils/logger.js";
 // Other modules write entries with record() (usually through middleware/audit.js).
 
 // Actions grouped for the summary cards (keep in sync with admin-web src/pages/AuditLog.jsx)
-const DATA_ACTIONS = ["CREATE", "UPDATE", "DELETE", "APPROVE", "REJECT", "REQUEST_CHANGES", "ASSIGN", "CANCEL"];
-const ACCESS_ACTIONS = ["ROLE_CHANGE", "DEACTIVATE", "ACTIVATE"];
+export const DATA_ACTIONS = ["CREATE", "UPDATE", "DELETE", "APPROVE", "REJECT", "REQUEST_CHANGES", "ASSIGN", "CANCEL"];
+export const ACCESS_ACTIONS = ["ROLE_CHANGE", "DEACTIVATE", "ACTIVATE"];
 
 // Table sort keys used by the frontend -> database fields
 const SORT_FIELDS = { ts: "createdAt", userName: "actorName", action: "action", entity: "entity" };
@@ -90,8 +90,8 @@ function toEntry(doc) {
   };
 }
 
-// Turn the page filters into a MongoDB filter
-function buildFilter({ q, action, entity, actor, from, to }) {
+// Turn the page filters into a MongoDB filter (also used by the Audit reports)
+export function buildAuditFilter({ q, action, entity, actor, from, to }) {
   const filter = {};
   if (action) filter.action = action;
   if (entity) filter.entity = entity;
@@ -110,7 +110,7 @@ function buildFilter({ q, action, entity, actor, from, to }) {
 
 // GET /audit-log: one page of entries plus the summary cards for the whole filtered range
 export async function listAuditLogs(query) {
-  const filter = buildFilter(query);
+  const filter = buildAuditFilter(query);
   const skip = (query.page - 1) * query.limit;
   const order = { [SORT_FIELDS[query.sort]]: query.dir === "asc" ? 1 : -1, _id: -1 };
   const inActions = (actions) => ({ $and: [filter, { action: { $in: actions } }] });

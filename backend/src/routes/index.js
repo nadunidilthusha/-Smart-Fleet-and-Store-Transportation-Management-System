@@ -28,7 +28,7 @@ router.use("/auth", authRoutes);
 
 // ---- Admin portal: signed in + SYSTEM_ADMIN ----
 const adminOnly = [protect, authorize(ROLES.SYSTEM_ADMIN)];
-// TEMP (development only): Vehicles, Stores, Items and Audit log skip sign-in until login is built (the user is still read from the token when one is sent, for audit entries); production and test keep adminOnly. Remove once login works.
+// TEMP (development only): Vehicles, Stores, Items, Audit log and Reports skip sign-in until login is built (the user is still read from the token when one is sent, for audit entries); production and test keep adminOnly. Remove once login works.
 const vehiclesGuard = env.NODE_ENV === "development" ? [attachUser] : adminOnly;
 router.use("/users", ...adminOnly, usersRoutes);             // admin-web src/api/userApi.js
 router.use("/stores", ...vehiclesGuard, storesRoutes);       // admin-web src/api/storeApi.js
@@ -40,7 +40,7 @@ router.use("/schedule", ...adminOnly, scheduleRoutes);       // admin-web and st
 router.use("/tracking", ...adminOnly, trackingRoutes);       // admin-web src/api/trackingApi.js
 router.use("/notifications", ...adminOnly, notificationsRoutes); // admin-web and store-web src/api/notificationApi.js
 router.use("/dashboard", ...adminOnly, dashboardRoutes);     // admin-web src/api/dashboardApi.js and store-web src/api/dashboardApi.js
-router.use("/reports", ...adminOnly, reportsRoutes);         // admin-web src/api/reportApi.js
+router.use("/reports", ...vehiclesGuard, reportsRoutes);     // admin-web src/api/reportApi.js
 router.use("/audit-log", ...vehiclesGuard, auditRoutes);     // admin-web src/api/auditApi.js
 
 // ---- Store portal: signed in + store roles ----
