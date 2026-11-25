@@ -4,7 +4,7 @@ import { TOKEN_KEY, USER_KEY } from "../utils/constants";
 
 export const AuthContext = createContext(null);
 
-const USE_MOCK = import.meta.env.VITE_USE_MOCK !== "false";
+const USE_MOCK = false;
 // Used only while VITE_USE_MOCK is on, so the dashboard opens without a login page
 const DEMO_USER = { id: "demo-admin", name: "Sadun Perera", role: ROLES.SYSTEM_ADMIN };
 

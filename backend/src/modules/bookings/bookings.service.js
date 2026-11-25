@@ -4,6 +4,7 @@ import Item from "../items/items.model.js";
 import User from "../users/users.model.js";
 import Trip from "../trips/trips.model.js";
 import ApiError from "../../utils/ApiError.js";
+import { notifyAdmins } from "../notifications/notifications.service.js";
 import { nextCode } from "../../utils/sequence.js";
 
 const pad = (n) => String(n).padStart(2, "0");
@@ -134,6 +135,18 @@ export async function createBooking(input, user) {
   });
 
   await booking.populate(POPULATE);
+
+  // Show the new booking in the Notifications page
+  const units = input.items.reduce((sum, line) => sum + line.quantity, 0);
+  const urgent = input.priority === "Urgent";
+  await notifyAdmins({
+    type: "booking",
+    severity: urgent ? "warning" : "info",
+    title: urgent ? "Urgent booking created" : "New booking created",
+    message: `${user.name} created ${code} (${pickup.name} to ${destination.name}) for ${units.toLocaleString("en-US")} units.`,
+    link: `/bookings?booking=${code}`,
+  });
+
   return toBookingResponse(booking.toObject());
 }
 
@@ -154,6 +167,14 @@ export async function reviewBooking(code, { status, comment }) {
       ? ApiError.conflict("Only pending bookings can be reviewed. This booking has already been decided.")
       : ApiError.notFound("Booking not found");
   }
+
+  // Show the decision in the Notifications page
+  const decision = {
+    Approved: { title: "Booking approved", message: `${code} was approved and is ready for trip planning.`, severity: "info" },
+    "Changes requested": { title: "Changes requested", message: `${code} is waiting for the store to make the requested changes.`, severity: "info" },
+    Rejected: { title: "Booking rejected", message: `${code} was rejected.`, severity: "warning" },
+  }[status];
+  if (decision) await notifyAdmins({ type: "booking", ...decision, link: `/bookings?booking=${code}` });
 
   return toBookingResponse(updated);
 }
@@ -377,6 +398,20 @@ export async function createStoreBooking(input, user) {
   });
 
   const saved = await Booking.findById(created._id).populate(STORE_POPULATE).lean();
+
+  // Tell the administrators a booking is waiting (drafts are private, so no alert for them)
+  if (!input.draft) {
+    const units = data.lines.reduce((sum, line) => sum + line.quantity, 0);
+    const urgent = input.priority === "Urgent";
+    await notifyAdmins({
+      type: "booking",
+      severity: urgent ? "warning" : "info",
+      title: urgent ? "Urgent booking waiting" : "New booking submitted",
+      message: `${user.name} submitted ${created.code} (${data.pickup.name} to ${data.destination.name}) for ${units.toLocaleString("en-US")} units.`,
+      link: `/bookings?booking=${created.code}`,
+    });
+  }
+
   return presentForStore(saved);
 }
 
@@ -413,6 +448,19 @@ export async function updateStoreBooking(code, input, user) {
     .populate(STORE_POPULATE)
     .lean();
   if (!updated) throw ApiError.conflict("This booking was just changed by someone else. Reload and try again.");
+
+  // A draft was sent, or a booking with requested changes was resubmitted: it needs a new decision
+  if (!input.draft && doc.status !== "Pending") {
+    const first = doc.status === "Draft";
+    await notifyAdmins({
+      type: "booking",
+      severity: "info",
+      title: first ? "New booking submitted" : "Booking resubmitted",
+      message: `${user.name} ${first ? "submitted" : "resubmitted"} ${code} for review.`,
+      link: `/bookings?booking=${code}`,
+    });
+  }
+
   return presentForStore(updated);
 }
 
@@ -436,5 +484,14 @@ export async function cancelStoreBooking(code, user) {
     .populate(STORE_POPULATE)
     .lean();
   if (!updated) throw ApiError.conflict("This booking was just changed by someone else. Reload and try again.");
+
+  await notifyAdmins({
+    type: "booking",
+    severity: "info",
+    title: "Booking cancelled",
+    message: `${user.name} cancelled ${code}.`,
+    link: `/bookings?booking=${code}`,
+  });
+
   return presentForStore(updated);
 }

@@ -1,6 +1,6 @@
 import apiClient from "./apiClient";
 
-const USE_MOCK = import.meta.env.VITE_USE_MOCK !== "false";
+const USE_MOCK = false;
 const wait = (ms = 250) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const minutesAgo = (m) => new Date(Date.now() - m * 60000).toISOString();
