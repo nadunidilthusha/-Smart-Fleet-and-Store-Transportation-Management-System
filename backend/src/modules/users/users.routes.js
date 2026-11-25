@@ -1,13 +1,48 @@
+
 import { Router } from "express";
 import * as controller from "./users.controller.js";
+import validate from "../../middleware/validate.js";
+
+import {
+  createUserSchema,
+  updateUserSchema,
+  userIdSchema,
+} from "./users.schema.js";
 
 const router = Router();
 
-// Frontend: admin-web src/api/userApi.js (Users and roles page)
-// Mounted in routes/index.js at /api/users (SYSTEM_ADMIN only)
-router.get("/", controller.list);                              // GET   /api/users
-router.post("/", controller.create);                           // POST  /api/users
-router.get("/:id", controller.getOne);                         // GET   /api/users/:id
-router.patch("/:id", controller.update);                       // PATCH /api/users/:id
+// GET /api/users
+// List all users
+router.get(
+  "/",
+  controller.list
+);
+
+// POST /api/users
+// Create a new user
+router.post(
+  "/",
+  validate({ body: createUserSchema }),
+  controller.create
+);
+
+// GET /api/users/:id
+// Get user details
+router.get(
+  "/:id",
+  validate({ params: userIdSchema }),
+  controller.getOne
+);
+
+// PATCH /api/users/:id
+// Update user details
+router.patch(
+  "/:id",
+  validate({
+    params: userIdSchema,
+    body: updateUserSchema,
+  }),
+  controller.update
+);
 
 export default router;
