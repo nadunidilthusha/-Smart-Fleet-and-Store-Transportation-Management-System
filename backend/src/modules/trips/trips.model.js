@@ -19,7 +19,6 @@ const schema = new mongoose.Schema({
   waybill: { type: String }
 }, { timestamps: true });
 
-schema.index({ code: 1 }, { unique: true });
 schema.index({ status: 1, createdAt: -1 });
 
 schema.plugin(toJSON, { codeAsId: true });

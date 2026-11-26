@@ -1,9 +1,14 @@
 import asyncHandler from "../../utils/asyncHandler.js";
-import notImplemented from "../../utils/notImplemented.js";
-// import * as service from "./schedule.service.js";
+import * as service from "./schedule.service.js";
 
-// GET   /api/store/schedule   slots of the signed-in store
+// GET /api/store/schedule
 export const list = asyncHandler(async (req, res) => {
-  notImplemented("GET /schedule");
-  // TODO: const result = await service.something(); res.json(result);
+  const { startDate, endDate } = req.query;
+  // Force the storeId to be the logged-in user's store
+  const data = await service.getScheduleData({ 
+    storeId: req.user.storeId, 
+    startDate, 
+    endDate 
+  });
+  res.json(data);
 });
