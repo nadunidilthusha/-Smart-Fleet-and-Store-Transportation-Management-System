@@ -10,7 +10,7 @@ import TripProgressDetail from "../pages/TripProgressDetail";
 import { PERMISSIONS, ROLES } from "../utils/roles";
 import Login from "../pages/Login";
 import GoodsConfirmation from "../pages/GoodsConfirmation";
-
+import StoreSchedule from "../pages/StoreSchedule"; // Imported your new page
 
 function ComingSoon({ title }) {
   return (
@@ -35,23 +35,20 @@ export default function AppRoutes() {
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="dashboard" element={<Dashboard />} />
           
-          <Route path="bookings/new" element={<CreateBooking />} />
-          <Route path="bookings/:id" element={<BookingDetail />} />
-          <Route path="schedule" element={<ComingSoon title="Store schedule" />} />
+          {/* Schedule Route - Now using the real component! */}
+          <Route path="schedule" element={<StoreSchedule />} />
           
-          {/* Fixed Routing Structure */}
           <Route path="trip-progress" element={<TripProgressList />} />
           <Route path="trip-progress/:id" element={<TripProgressDetail />} />
-
-           {/* Booking management is limited to store managers */}
+          <Route path="goods-confirmation" element={<GoodsConfirmation />} />
+          
+          {/* Booking management is limited to store managers */}
           <Route element={<ProtectedRoute permission={PERMISSIONS.MANAGE_BOOKINGS} />}>
             <Route path="bookings" element={<Bookings />} />
             <Route path="bookings/new" element={<CreateBooking />} />
             <Route path="bookings/:id" element={<BookingDetail />} />
           </Route>
           
-          <Route path="goods-confirmation" element={<GoodsConfirmation />} />
-          <Route path="notifications" element={<ComingSoon title="Notifications" />} />
           <Route path="*" element={<ComingSoon title="Page not found" />} />
         </Route>
       </Route>

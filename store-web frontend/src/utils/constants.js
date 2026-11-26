@@ -1,6 +1,5 @@
 import { PERMISSIONS } from "./roles";
 
-
 // Authentication storage keys
 export const TOKEN_KEY = "store_token";
 export const USER_KEY = "store_user";
@@ -80,7 +79,6 @@ export function getPageTitle(pathname) {
     ["/schedule", "Store schedule"],
     ["/trip-progress", "Trip progress"],
     ["/goods-confirmation", "Goods confirmation"],
-    ["/notifications", "Notifications"],
   ];
 
   const match = pageTitles.find(
