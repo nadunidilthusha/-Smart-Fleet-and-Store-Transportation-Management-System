@@ -30,7 +30,6 @@ const schema = new mongoose.Schema({
 }, { timestamps: true });
 
 // BE-2: Indexes for fast querying
-schema.index({ code: 1 }, { unique: true });
 schema.index({ status: 1, requestedFor: 1 });
 schema.index({ pickup: 1, requestedFor: 1 });
 schema.index({ destination: 1, requestedFor: 1 });

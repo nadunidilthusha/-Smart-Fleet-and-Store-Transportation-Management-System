@@ -18,7 +18,6 @@ const schema = new mongoose.Schema({
   isDraft: { type: Boolean, default: false } // saved via "Save as Draft" on Add Item
 }, { timestamps: true });
 
-schema.index({ code: 1 }, { unique: true });
 schema.plugin(toJSON);
 
 export default mongoose.model("Item", schema);
