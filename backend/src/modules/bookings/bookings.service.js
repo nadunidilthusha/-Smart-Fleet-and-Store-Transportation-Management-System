@@ -8,6 +8,8 @@ import { notifyAdmins } from "../notifications/notifications.service.js";
 import { nextCode } from "../../utils/sequence.js";
 import runInTransaction from "../../utils/transaction.js";
 import { releaseBookingFromTrips } from "../trips/trips.service.js";
+import { reserveSlotForBooking } from "../schedule/schedule.service.js";
+import { notifyStore } from "../notifications/notifications.service.js";
 import { assertNotHandedOver, closeConfirmationForBooking } from "../confirmation/confirmation.service.js";
 
 const pad = (n) => String(n).padStart(2, "0");
@@ -154,8 +156,28 @@ export async function createBooking(input, user) {
 }
 
 // PATCH /api/bookings/:id/status  (approve, request changes or reject a pending booking)
+// PATCH /api/bookings/:id/status  (approve, request changes or reject a pending booking)
 export async function reviewBooking(code, { status, comment }) {
-  // One atomic update: only a Pending booking can be reviewed, so two admins cannot both decide
+  // 1. Get the booking first to check pickup and requestedFor times
+  const existing = await Booking.findOne({ code, status: "Pending" });
+  
+  if (!existing) {
+    const exists = await Booking.exists({ code });
+    throw exists
+      ? ApiError.conflict("Only pending bookings can be reviewed. This booking has already been decided.")
+      : ApiError.notFound("Booking not found");
+  }
+
+  // 2. If approving, try to reserve the slot FIRST (BE-6 & BE-7)
+  if (status === "Approved") {
+    await reserveSlotForBooking({
+      storeId: existing.pickup,
+      requestedFor: existing.requestedFor,
+      bookingId: existing._id
+    });
+  }
+
+  // 3. Atomically update the status
   const updated = await Booking.findOneAndUpdate(
     { code, status: "Pending" },
     { $set: { status, adminNote: comment }, $push: { history: { label: status, at: new Date() } } },
@@ -165,19 +187,29 @@ export async function reviewBooking(code, { status, comment }) {
     .lean();
 
   if (!updated) {
-    const exists = await Booking.exists({ code });
-    throw exists
-      ? ApiError.conflict("Only pending bookings can be reviewed. This booking has already been decided.")
-      : ApiError.notFound("Booking not found");
+    throw ApiError.conflict("Booking was already reviewed by another admin.");
   }
 
-  // Show the decision in the Notifications page
+  // 4. Notify Admins (existing code)
   const decision = {
     Approved: { title: "Booking approved", message: `${code} was approved and is ready for trip planning.`, severity: "info" },
     "Changes requested": { title: "Changes requested", message: `${code} is waiting for the store to make the requested changes.`, severity: "info" },
     Rejected: { title: "Booking rejected", message: `${code} was rejected.`, severity: "warning" },
   }[status];
-  if (decision) await notifyAdmins({ type: "booking", ...decision, link: `/bookings?booking=${code}` });
+  
+  if (decision) {
+    await notifyAdmins({ type: "booking", ...decision, link: `/bookings?booking=${code}` });
+  }
+
+  // 5. NEW: Notify the Store (FE-8 Support)
+  await notifyStore({
+    storeId: existing.pickup,
+    type: "booking",
+    severity: status === "Rejected" ? "warning" : "info",
+    title: `Booking ${status}`,
+    message: `${code} was ${status.toLowerCase()}. ${comment ? `Note: ${comment}` : ''}`,
+    link: `/bookings?booking=${code}`
+  });
 
   return toBookingResponse(updated);
 }

@@ -1,30 +1,28 @@
 import LoadingSlot from "./schedule.model.js";
 import Trip from "../trips/trips.model.js";
+import Store from "../stores/stores.model.js";
+import ApiError from "../../utils/ApiError.js";
 
 export async function getScheduleData({ storeId, startDate, endDate }) {
   const filter = {};
   if (storeId) filter.store = storeId;
   
-  // If dates are provided, filter by them
   if (startDate || endDate) {
     filter.date = {};
     if (startDate) filter.date.$gte = startDate;
     if (endDate) filter.date.$lte = endDate;
   }
 
-  // 1. Fetch Store Loading Slots
   const slots = await LoadingSlot.find(filter)
     .populate("store", "name shortName")
     .populate("booking", "code status")
     .populate("trip", "code status")
     .sort({ date: 1, startTime: 1 });
 
-  // 2. Fetch Active Trips for the timeline
   const tripFilter = {};
   if (storeId) tripFilter["stops.store"] = storeId;
   if (startDate || endDate) {
     tripFilter.createdAt = {};
-    // Assuming trips are planned within a few days of creation
     if (startDate) tripFilter.createdAt.$gte = new Date(startDate);
     if (endDate) tripFilter.createdAt.$lte = new Date(new Date(endDate).setHours(23, 59, 59));
   }
@@ -35,8 +33,48 @@ export async function getScheduleData({ storeId, startDate, endDate }) {
     .populate("stops.store", "name shortName")
     .sort({ createdAt: 1 });
 
-  return {
-    slots,
-    trips
-  };
+  return { slots, trips };
+}
+
+// BE-6 & BE-7: Reserve a slot and detect conflicts
+export async function reserveSlotForBooking({ storeId, requestedFor, bookingId }) {
+  const store = await Store.findById(storeId);
+  if (!store) throw ApiError.notFound("Store not found");
+
+  const requestedDate = new Date(requestedFor);
+  const dateStr = requestedDate.toISOString().split("T")[0]; // YYYY-MM-DD
+  const startTime = requestedDate.toTimeString().slice(0, 5); // HH:MM
+  
+  // Create a 1-hour window for the slot
+  const endTimeDate = new Date(requestedDate.getTime() + 60 * 60000);
+  const endTime = endTimeDate.toTimeString().slice(0, 5); 
+
+  // 1. Check Operating Hours
+  const open = store.operatingHours?.open || "06:00";
+  const close = store.operatingHours?.close || "20:00";
+  if (startTime < open || endTime > close) {
+    throw ApiError.badRequest(`Time is outside store hours (${open} - ${close})`);
+  }
+
+  // 2. Check Simultaneous Vehicle Capacity (Overlaps)
+  const overlappingSlots = await LoadingSlot.countDocuments({
+    store: storeId,
+    date: dateStr,
+    $or: [{ startTime: { $lt: endTime }, endTime: { $gt: startTime } }]
+  });
+
+  const maxCapacity = store.loadingSlotRules?.maxSimultaneousVehicles || 2;
+  if (overlappingSlots >= maxCapacity) {
+    throw ApiError.conflict("This time slot is fully booked. Please choose another time.");
+  }
+
+  // 3. Reserve
+  return await LoadingSlot.create({
+    store: storeId,
+    date: dateStr,
+    startTime,
+    endTime,
+    status: "Reserved",
+    booking: bookingId
+  });
 }
