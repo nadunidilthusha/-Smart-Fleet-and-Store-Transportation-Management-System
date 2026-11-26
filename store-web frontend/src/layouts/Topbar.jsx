@@ -1,6 +1,7 @@
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { Bell, Search } from "lucide-react";
+import { Search } from "lucide-react"; // You can remove 'Bell' from here since it's inside the new component
 import { getPageTitle } from "../utils/constants";
+import NotificationBell from "../components/common/NotificationBell";
 
 export default function Topbar() {
   const { pathname } = useLocation();
@@ -51,15 +52,9 @@ export default function Topbar() {
         />
       </form>
 
-      <button
-        type="button"
-        aria-label="Notifications"
-        onClick={() => navigate("/notifications")}
-        className="relative grid h-9 w-9 place-items-center rounded-md text-mute hover:bg-slate-100"
-      >
-        <Bell size={17} strokeWidth={1.6} />
-        <span className="absolute right-2 top-2 h-2 w-2 rounded-full border-2 border-white bg-bad" />
-      </button>
+      {/* --- REPLACED THE OLD BUTTON WITH THE NEW COMPONENT HERE --- */}
+      <NotificationBell />
+      
     </header>
   );
 }
