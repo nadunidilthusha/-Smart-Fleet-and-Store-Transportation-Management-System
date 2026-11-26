@@ -1,20 +1,41 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Plus } from 'lucide-react';
+import apiClient from '../api/apiClient';
 
 const TripPlannerList = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('All');
+  const [trips, setTrips] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const tabs = ['All', 'Draft', 'Pending Allocation', 'Allocated'];
-  
-  const dummyTrips = [
-    { id: 'TR-0450', origin: 'Main Store - Biyagama', dest: 'Kandy Regional Store', stops: 3, load: '6,500 kg', status: 'Pending Allocation', date: '05 Nov, 2026' },
-    { id: 'TR-0449', origin: 'Ja-Ela Hub', dest: 'Colombo Central', stops: 2, load: '3,200 kg', status: 'Allocated', date: '04 Nov, 2026' },
-    { id: 'TR-0451', origin: 'Main Store - Biyagama', dest: 'Galle Distribution', stops: 4, load: '-', status: 'Draft', date: '05 Nov, 2026' }
-  ];
+  // Match these tabs to the actual statuses in your Trip Mongoose model
+  const tabs = ['All', 'Scheduled', 'In transit', 'Completed', 'Unallocated'];
 
-  const filteredTrips = activeTab === 'All' ? dummyTrips : dummyTrips.filter(t => t.status === activeTab);
+  useEffect(() => {
+    apiClient.get('/trips')
+      .then(res => {
+        const formatted = res.data.map(trip => ({
+          id: trip.code,
+          origin: trip.stops?.[0]?.store?.name || 'Unknown Origin',
+          dest: trip.stops?.[trip.stops.length - 1]?.store?.name || 'Unknown Destination',
+          stops: trip.stops?.length || 0,
+          load: trip.load ? `${trip.load.toLocaleString()} units` : '-',
+          status: trip.status || 'Scheduled',
+          date: new Date(trip.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+        }));
+        setTrips(formatted);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error("Failed to load trips", err);
+        setLoading(false);
+      });
+  }, []);
+
+  const filteredTrips = activeTab === 'All' ? trips : trips.filter(t => t.status === activeTab);
+
+  if (loading) return <div className="p-10 text-center text-gray-500">Loading trips...</div>;
 
   return (
     <div className="flex-1 flex flex-col min-w-0 bg-slate-50 p-6 overflow-auto">
@@ -63,7 +84,7 @@ const TripPlannerList = () => {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filteredTrips.map(trip => (
-                <tr key={trip.id} className="hover:bg-gray-50 cursor-pointer transition-colors" onClick={() => navigate(trip.status === 'Draft' ? '/trip-planner/new' : '/allocation')}>
+                <tr key={trip.id} className="hover:bg-gray-50 cursor-pointer transition-colors" onClick={() => navigate('/trip-planner')}>
                   <td className="px-5 py-3 font-medium text-gray-900">{trip.id}</td>
                   <td className="px-5 py-3 text-gray-700">{trip.origin}</td>
                   <td className="px-5 py-3 text-gray-700">{trip.dest}</td>
@@ -72,8 +93,9 @@ const TripPlannerList = () => {
                   <td className="px-5 py-3 text-gray-700">{trip.date}</td>
                   <td className="px-5 py-3">
                     <span className={`px-2.5 py-1 rounded text-[11px] font-bold tracking-wide ${
-                      trip.status === 'Draft' ? 'bg-gray-100 text-gray-600' :
-                      trip.status === 'Pending Allocation' ? 'bg-amber-100 text-amber-700' :
+                      trip.status === 'Unallocated' ? 'bg-gray-100 text-gray-600' :
+                      trip.status === 'Scheduled' ? 'bg-amber-100 text-amber-700' :
+                      trip.status === 'In transit' ? 'bg-blue-100 text-blue-700' :
                       'bg-green-100 text-green-700'
                     }`}>
                       {trip.status}
