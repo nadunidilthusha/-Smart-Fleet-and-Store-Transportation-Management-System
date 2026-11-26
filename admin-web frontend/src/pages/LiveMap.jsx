@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline, ZoomControl, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
+import apiClient from '../api/apiClient';
 
 import icon from 'leaflet/dist/images/marker-icon.png';
 import iconShadow from 'leaflet/dist/images/marker-shadow.png';
@@ -20,37 +21,80 @@ const MapRecenter = ({ center }) => {
   return null;
 };
 
-const LiveMap = () => {
-  const [vehicles, setVehicles] = useState([
-    {
-      id: 'WP-CA-5582',
-      type: '5T Box Truck',
-      status: 'In Transit',
-      driver: 'Sunil Fernando',
-      tripId: 'TR-0412',
-      currentSegment: 'Biyagama Central',
-      departure: 'Departed 16:45',
-      nextHub: 'Ja-Ela Hub',
-      eta: '45 mins',
-      lastTimestamp: 'Today, 8:30 PM',
-      coordinates: [7.0000, 79.9500]
-    },
-    {
-      id: 'LB-1190',
-      type: '10T Heavy Truck',
-      status: 'Arriving Soon',
-      driver: 'M. Jayasuriya',
-      tripId: 'TR-0410',
-      currentSegment: 'Approaching Main Hub',
-      departure: 'Departed 15:00',
-      nextHub: 'Main Store - Biyagama',
-      eta: '10 mins',
-      lastTimestamp: 'Today, 8:35 PM',
-      coordinates: [6.9271, 79.8612]
-    }
-  ]);
+// --- FALLBACK MOCK DATA (In case the backend API is not ready) ---
+const MOCK_VEHICLES = [
+  {
+    id: 'WP-CA-5582',
+    type: '5T Box Truck',
+    status: 'In Transit',
+    driver: 'Sunil Fernando',
+    tripId: 'TR-0412',
+    currentSegment: 'Biyagama Central',
+    departure: 'Departed 16:45',
+    nextHub: 'Ja-Ela Hub',
+    eta: '45 mins',
+    lastTimestamp: 'Today, 8:30 PM',
+    coordinates: [7.0000, 79.9500]
+  },
+  {
+    id: 'LB-1190',
+    type: '10T Heavy Truck',
+    status: 'Arriving Soon',
+    driver: 'M. Jayasuriya',
+    tripId: 'TR-0410',
+    currentSegment: 'Approaching Main Hub',
+    departure: 'Departed 15:00',
+    nextHub: 'Main Store - Biyagama',
+    eta: '10 mins',
+    lastTimestamp: 'Today, 8:35 PM',
+    coordinates: [6.9271, 79.8612]
+  }
+];
 
-  const [selectedVehicle, setSelectedVehicle] = useState(vehicles[0]);
+const LiveMap = () => {
+  const [vehicles, setVehicles] = useState([]);
+  const [selectedVehicle, setSelectedVehicle] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchLiveData = () => {
+      apiClient.get('/tracking/live').then(res => {
+        // If the backend returns data, use it
+        if (res.data && res.data.length > 0) {
+          const formatted = res.data.map(v => ({
+            id: v.vehicle?.plate || 'Unknown',
+            type: v.vehicle?.type || 'Vehicle',
+            status: 'In Transit',
+            driver: v.driver?.name || 'Assigned Driver',
+            tripId: v.trip?.code || 'N/A',
+            currentSegment: 'En route',
+            departure: 'Departed',
+            nextHub: v.trip?.nextStop || 'Hub',
+            eta: 'Calculating...',
+            lastTimestamp: new Date(v.recordedAt).toLocaleTimeString(),
+            coordinates: [v.lat, v.lng]
+          }));
+          setVehicles(formatted);
+          setSelectedVehicle(formatted[0]);
+        } else {
+          // If backend returns empty, use Mock Data
+          setVehicles(MOCK_VEHICLES);
+          setSelectedVehicle(MOCK_VEHICLES[0]);
+        }
+        setLoading(false);
+      }).catch(err => {
+        console.warn("Backend tracking API not ready, using mock data.", err.message);
+        // If backend throws 404/500, fallback to Mock Data
+        setVehicles(MOCK_VEHICLES);
+        setSelectedVehicle(MOCK_VEHICLES[0]);
+        setLoading(false);
+      });
+    };
+
+    fetchLiveData();
+    const interval = setInterval(fetchLiveData, 10000); 
+    return () => clearInterval(interval);
+  }, []);
 
   const locations = {
     mainStore: [6.9535, 79.9700],
@@ -64,6 +108,12 @@ const LiveMap = () => {
     locations.kandy
   ];
 
+  // Show loading ONLY if it's actually loading
+  if (loading) return <div className="p-10 text-center text-gray-500 font-medium">Loading live map data...</div>;
+  
+  // Safety fallback if somehow no vehicle is selected
+  if (!selectedVehicle) return <div className="p-10 text-center text-gray-500 font-medium">No active vehicles found.</div>;
+
   return (
     <div className="flex-1 flex flex-col min-w-0 bg-slate-50 p-6 overflow-auto">
       {/* Metric Cards Header */}
@@ -72,14 +122,12 @@ const LiveMap = () => {
           <div>
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Vehicles in Transit</p>
             <div className="flex items-baseline gap-2 mt-1">
-              <span className="text-2xl font-bold text-gray-900">4</span>
+              <span className="text-2xl font-bold text-gray-900">{vehicles.length}</span>
               <span className="text-xs text-gray-500">/ 12 Active</span>
             </div>
           </div>
           <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-600">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
           </div>
         </div>
 
@@ -92,9 +140,7 @@ const LiveMap = () => {
             </div>
           </div>
           <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center text-red-600">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
           </div>
         </div>
 
@@ -107,9 +153,7 @@ const LiveMap = () => {
             </div>
           </div>
           <div className="w-10 h-10 rounded-full bg-emerald-50 flex items-center justify-center text-emerald-600">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
           </div>
         </div>
       </div>
@@ -158,9 +202,7 @@ const LiveMap = () => {
             zoomControl={false} 
             style={{ width: '100%', height: '100%' }}
           >
-            {/* Zoom Controls explicitly placed at bottomright */}
             <ZoomControl position="bottomright" />
-
             <MapRecenter center={selectedVehicle.coordinates} />
             <TileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -169,15 +211,9 @@ const LiveMap = () => {
 
             <Polyline positions={activeRouteCoordinates} color="#2563eb" weight={4} dashArray="6, 6" />
 
-            <Marker position={locations.mainStore}>
-              <Popup><b>Main Store - Biyagama</b><br />Primary Hub / Dispatch</Popup>
-            </Marker>
-            <Marker position={locations.jaEla}>
-              <Popup><b>Ja-Ela Hub</b><br />Distribution Center</Popup>
-            </Marker>
-            <Marker position={locations.kandy}>
-              <Popup><b>Store 3 - Kandy</b><br />Regional Destination</Popup>
-            </Marker>
+            <Marker position={locations.mainStore}><Popup><b>Main Store - Biyagama</b><br />Primary Hub / Dispatch</Popup></Marker>
+            <Marker position={locations.jaEla}><Popup><b>Ja-Ela Hub</b><br />Distribution Center</Popup></Marker>
+            <Marker position={locations.kandy}><Popup><b>Store 3 - Kandy</b><br />Regional Destination</Popup></Marker>
 
             <Marker position={selectedVehicle.coordinates}>
               <Popup>
@@ -188,7 +224,7 @@ const LiveMap = () => {
             </Marker>
           </MapContainer>
 
-          {/* Floating Vehicle Detail Info Overlay Card (Top Left) */}
+          {/* Floating Vehicle Detail Info Overlay Card */}
           <div className="absolute left-6 top-6 w-72 bg-white/95 backdrop-blur-sm rounded-lg border border-gray-200 shadow-xl overflow-hidden z-[400]">
             <div className="bg-gray-900 text-white px-4 py-3 flex justify-between items-center">
               <div>
