@@ -9,10 +9,9 @@ const TripPlannerList = () => {
   const [trips, setTrips] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Match these tabs to the actual statuses in your Trip Mongoose model
   const tabs = ['All', 'Scheduled', 'In transit', 'Completed', 'Unallocated'];
 
-  useEffect(() => {
+  const fetchTrips = () => {
     apiClient.get('/trips')
       .then(res => {
         const formatted = res.data.map(trip => ({
@@ -31,7 +30,21 @@ const TripPlannerList = () => {
         console.error("Failed to load trips", err);
         setLoading(false);
       });
+  };
+
+  useEffect(() => {
+    fetchTrips();
   }, []);
+
+  // Update Status Function
+  const handleStatusChange = async (tripId, newStatus) => {
+    try {
+      await apiClient.patch(`/trips/${tripId}`, { status: newStatus });
+      fetchTrips(); 
+    } catch (err) {
+      alert("Failed to update status");
+    }
+  };
 
   const filteredTrips = activeTab === 'All' ? trips : trips.filter(t => t.status === activeTab);
 
@@ -41,9 +54,9 @@ const TripPlannerList = () => {
     <div className="flex-1 flex flex-col min-w-0 bg-slate-50 p-6 overflow-auto">
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
-          <div className="text-xs text-gray-500 mb-1">Operations / Trip Planning</div>
-          <h1 className="text-2xl font-bold text-gray-900">Trip Planner</h1>
-          <p className="text-sm text-gray-500 mt-1">Manage and create multi-stop transportation routes</p>
+          <div className="text-xs text-gray-500 mb-1">Operations / Trips</div>
+          <h1 className="text-2xl font-bold text-gray-900">Trip History</h1>
+          <p className="text-sm text-gray-500 mt-1">Manage and track all transportation routes</p>
         </div>
         <button
           type="button"
@@ -79,33 +92,40 @@ const TripPlannerList = () => {
                 <th className="px-5 py-3 font-medium border-b border-gray-200">Stops</th>
                 <th className="px-5 py-3 font-medium border-b border-gray-200 text-right">Total Load</th>
                 <th className="px-5 py-3 font-medium border-b border-gray-200">Date</th>
-                <th className="px-5 py-3 font-medium border-b border-gray-200">Status</th>
+                <th className="px-5 py-3 font-medium border-b border-gray-200">Update Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filteredTrips.map(trip => (
-                <tr key={trip.id} className="hover:bg-gray-50 cursor-pointer transition-colors" onClick={() => navigate('/trip-planner')}>
+                <tr key={trip.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-5 py-3 font-medium text-gray-900">{trip.id}</td>
                   <td className="px-5 py-3 text-gray-700">{trip.origin}</td>
                   <td className="px-5 py-3 text-gray-700">{trip.dest}</td>
                   <td className="px-5 py-3 text-gray-700">{trip.stops}</td>
                   <td className="px-5 py-3 text-gray-900 font-medium text-right">{trip.load}</td>
                   <td className="px-5 py-3 text-gray-700">{trip.date}</td>
+                  
                   <td className="px-5 py-3">
-                    <span className={`px-2.5 py-1 rounded text-[11px] font-bold tracking-wide ${
-                      trip.status === 'Unallocated' ? 'bg-gray-100 text-gray-600' :
-                      trip.status === 'Scheduled' ? 'bg-amber-100 text-amber-700' :
-                      trip.status === 'In transit' ? 'bg-blue-100 text-blue-700' :
-                      'bg-green-100 text-green-700'
-                    }`}>
-                      {trip.status}
-                    </span>
+                    <select 
+                      value={trip.status} 
+                      onChange={(e) => handleStatusChange(trip.id, e.target.value)}
+                      className={`px-2 py-1 rounded text-[12px] font-bold border outline-none cursor-pointer ${
+                        trip.status === 'Scheduled' ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                        trip.status === 'In transit' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                        trip.status === 'Completed' ? 'bg-green-50 text-green-700 border-green-200' :
+                        'bg-gray-100 text-gray-700 border-gray-200'
+                      }`}
+                    >
+                      <option value="Scheduled">Scheduled</option>
+                      <option value="In transit">In transit</option>
+                      <option value="Completed">Completed</option>
+                    </select>
                   </td>
                 </tr>
               ))}
               {filteredTrips.length === 0 && (
                 <tr>
-                  <td colSpan="7" className="px-5 py-8 text-center text-gray-500 text-sm">No trip plans found in this category.</td>
+                  <td colSpan="7" className="px-5 py-8 text-center text-gray-500 text-sm">No trip plans found.</td>
                 </tr>
               )}
             </tbody>

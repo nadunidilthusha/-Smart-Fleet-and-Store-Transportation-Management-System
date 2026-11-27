@@ -15,7 +15,10 @@ export const NAV_GROUPS = [
       { label: "Dashboard", to: "/dashboard", icon: "dashboard" },
       { label: "Bookings", to: "/bookings", icon: "bookings" },
       { label: "Trips", to: "/trips", icon: "trips" },
-      { label: "Trip Planning", to: "/trip-planner", icon: "planning" },
+      
+      // UPDATED: Trip Planning now goes directly to the "New" page
+      { label: "Trip Planning", to: "/trip-planner/new", icon: "planning" }, 
+      
       { label: "Schedule", to: "/schedule", icon: "schedule" },
       { label: "Live Map", to: "/live-map", icon: "map" },
     ],
@@ -56,13 +59,8 @@ export function getPageTitle(pathname) {
     ["/dashboard", "Dashboard"],
     ["/bookings", "Bookings"],
     ["/trips", "Trips"],
-    
-    // --- ADDED MISSING ROUTES HERE ---
     ["/trip-planner/new", "Trip Planning / New"], 
     ["/trip-planner", "Trip Planning"],
-    ["/allocation", "Trip Planning / Allocation"],
-    // ---------------------------------
-    
     ["/schedule", "Schedule"],
     ["/live-map", "Live Map"],
     ["/vehicles", "Vehicles"],

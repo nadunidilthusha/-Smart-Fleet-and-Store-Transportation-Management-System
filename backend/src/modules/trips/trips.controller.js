@@ -23,6 +23,11 @@ export const getOne = asyncHandler(async (req, res) => {
 
 // PATCH /api/trips/:id
 export const update = asyncHandler(async (req, res) => {
-  const trip = await Trip.findOneAndUpdate({ code: req.params.id }, req.body, { new: true });
+  const trip = await Trip.findOneAndUpdate(
+    { code: req.params.id }, 
+    { status: req.body.status }, 
+    { new: true }
+  );
+  if (!trip) return res.status(404).json({ message: "Trip not found" });
   res.json(trip);
 });
