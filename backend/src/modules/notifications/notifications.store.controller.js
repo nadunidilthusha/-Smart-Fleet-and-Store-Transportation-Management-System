@@ -19,6 +19,7 @@ export const markAllRead = asyncHandler(async (req, res) => {
 // PATCH /api/store/notifications/:id
 export const setRead = asyncHandler(async (req, res) => {
   if (!req.user.storeId) throw ApiError.forbidden("No store assigned to this account");
-  const result = await service.setStoreNotificationRead(req.params.id, req.body.read, req.user.storeId);
+  const read = req.body?.read ?? true;
+  const result = await service.setStoreNotificationRead(req.params.id, read, req.user.storeId);
   res.json(result);
 });
