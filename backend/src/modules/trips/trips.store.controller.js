@@ -1,15 +1,14 @@
 import asyncHandler from "../../utils/asyncHandler.js";
-import notImplemented from "../../utils/notImplemented.js";
-// import * as service from "./trips.service.js";
+import * as service from "./trips.service.js";
 
-// GET   /api/store/trips   inbound and outbound trips for the signed-in store
+// GET /api/store/trips
 export const list = asyncHandler(async (req, res) => {
-  notImplemented("GET /trips");
-  // TODO: const result = await service.something(); res.json(result);
+  const result = await service.getStoreTrips(req.user);
+  res.json(result);
 });
 
-// GET   /api/store/trips/:id   trip progress detail
+// GET /api/store/trips/:id
 export const getOne = asyncHandler(async (req, res) => {
-  notImplemented("GET /trips/:id");
-  // TODO: const result = await service.something(); res.json(result);
+  const result = await service.getOneStoreTrip(req.params.id, req.user);
+  res.json(result);
 });
