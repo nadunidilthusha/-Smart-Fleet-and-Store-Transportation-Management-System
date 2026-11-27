@@ -204,3 +204,31 @@ export async function getOneStoreTrip(code, user) {
   if (!trip) throw ApiError.notFound("Trip not found");
   return trip;
 }
+
+export async function completeStoreTrip(tripCode, user) {
+  if (!user.storeId) throw ApiError.forbidden("No store assigned");
+
+  // 1. Find the trip
+  const trip = await Trip.findOne({ code: tripCode, "stops.store": user.storeId });
+  if (!trip) throw ApiError.notFound("Trip not found");
+
+  // 2. Update Trip Status
+  trip.status = "Completed";
+  trip.stops = trip.stops.map(stop => ({ ...stop, status: "Completed" })); // Mark all stops completed
+  await trip.save();
+
+  // 3. Update Bookings inside this trip to 'Completed'
+  if (trip.bookings && trip.bookings.length > 0) {
+    await Booking.updateMany(
+      { _id: { $in: trip.bookings } },
+      { $set: { status: "Completed" } }
+    );
+  }
+
+  // 4. Free up the vehicle
+  if (trip.vehicle) {
+    await releaseVehicleIfIdle(trip.vehicle);
+  }
+
+  return trip;
+}
