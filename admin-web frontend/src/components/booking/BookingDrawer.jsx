@@ -25,8 +25,12 @@ export default function BookingDrawer({ booking, onClose, onDecide }) {
     setError("");
     try {
       await onDecide(booking, status, comment.trim());
-    } catch {
-      setError("We could not save this decision. Try again.");
+    } catch (err) {
+      const message =
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        "We could not save this decision. Try again.";
+      setError(message);
       setBusy(false);
     }
   };
