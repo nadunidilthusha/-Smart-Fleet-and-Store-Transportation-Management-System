@@ -1,38 +1,50 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Truck, Search, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { Search, ArrowRight } from 'lucide-react';
+import apiClient from '../api/apiClient';
 
 export default function TripProgressList() {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [statusTab, setStatusTab] = useState("All");
-
-  // 4 Rich Dummy Trips for testing different statuses
-  const defaultDummyTrips = [
-    { id: 'TR-0412', ref: 'BK-1104-0088', vehicle: 'WP-CA-5582 (5T Truck)', origin: 'Main Store - Biyagama', dest: 'Store 3 - Kandy', eta: '14:30 PM', status: 'In Transit', progress: '75%' },
-    { id: 'TR-0415', ref: 'BK-1104-0095', vehicle: 'SP-DA-6744 (10T Truck)', origin: 'Ja-Ela Hub', dest: 'Store 3 - Kandy', eta: '16:00 PM', status: 'Dispatched', progress: '25%' },
-    { id: 'TR-0420', ref: 'BK-1104-0102', vehicle: 'WP-AB-1234 (10T Truck)', origin: 'Main Store - Biyagama', dest: 'Galle Regional', eta: '18:15 PM', status: 'In Transit', progress: '50%' },
-    { id: 'TR-0398', ref: 'BK-1103-0041', vehicle: 'WP-XY-9988 (3T Lorry)', origin: 'Colombo Central', dest: 'Store 3 - Kandy', eta: 'Delivered', status: 'Arrived', progress: '100%' }
-  ];
-
-  const [trips, setTrips] = useState(() => {
-    const saved = localStorage.getItem('store_inbound_trips');
-    if (saved) {
-      try { return JSON.parse(saved); } catch (e) { /* fallback */ }
-    }
-    localStorage.setItem('store_inbound_trips', JSON.stringify(defaultDummyTrips));
-    return defaultDummyTrips;
-  });
+  const [trips, setTrips] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    localStorage.setItem('store_inbound_trips', JSON.stringify(trips));
-  }, [trips]);
+    apiClient.get('/store/trips')
+      .then(res => {
+        const formatted = res.data.map(trip => {
+          const origin = trip.stops?.[0]?.store?.name || 'Unknown Origin';
+          const dest = trip.stops?.[trip.stops.length - 1]?.store?.name || 'Unknown Destination';
+          
+          return {
+            id: trip.code,
+            ref: trip.bookings?.[0]?.code || 'No Booking Ref',
+            vehicle: trip.vehicle ? `${trip.vehicle.plate} (${trip.vehicle.type})` : 'Unassigned',
+            origin: origin,
+            dest: dest,
+            eta: trip.nextStop || 'Calculating...',
+            status: trip.status
+          };
+        });
+        setTrips(formatted);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error("Failed to load store trips", err);
+        setLoading(false);
+      });
+  }, []);
 
   const filtered = trips.filter(t => {
     const matchesTab = statusTab === 'All' || t.status === statusTab;
-    const matchesSearch = t.id.toLowerCase().includes(search.toLowerCase()) || t.ref.toLowerCase().includes(search.toLowerCase());
+    const matchesSearch = 
+      t.id.toLowerCase().includes(search.toLowerCase()) || 
+      t.ref.toLowerCase().includes(search.toLowerCase());
     return matchesTab && matchesSearch;
   });
+
+  if (loading) return <div className="p-10 text-center text-slate-500">Loading shipments...</div>;
 
   return (
     <div className="flex flex-col min-h-screen bg-slate-50 p-8">
@@ -41,22 +53,12 @@ export default function TripProgressList() {
           <h1 className="text-2xl font-bold text-slate-900">Inbound Shipments & Trip Progress</h1>
           <p className="text-sm text-slate-500 mt-1">Monitor live GPS tracking, delivery timelines, and confirm item receipts.</p>
         </div>
-        <button 
-          onClick={() => {
-            localStorage.setItem('store_inbound_trips', JSON.stringify(defaultDummyTrips));
-            setTrips(defaultDummyTrips);
-          }}
-          className="px-3 py-1.5 bg-white border border-slate-300 text-xs font-semibold rounded-lg text-slate-600 hover:bg-slate-100"
-        >
-          🔄 Reset Dummy Data
-        </button>
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm flex flex-col">
-        {/* Tabs & Search */}
         <div className="p-4 border-b border-slate-100 flex justify-between items-center gap-4 flex-wrap">
           <div className="flex gap-2">
-            {['All', 'In Transit', 'Dispatched', 'Arrived'].map(tab => (
+            {['All', 'Scheduled', 'In transit', 'Completed'].map(tab => (
               <button
                 key={tab}
                 onClick={() => setStatusTab(tab)}
@@ -80,7 +82,6 @@ export default function TripProgressList() {
           </div>
         </div>
 
-        {/* Table */}
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm whitespace-nowrap">
             <thead className="bg-slate-50 text-slate-500 text-xs uppercase font-semibold">
@@ -89,7 +90,7 @@ export default function TripProgressList() {
                 <th className="px-6 py-3">Booking Ref</th>
                 <th className="px-6 py-3">Assigned Vehicle</th>
                 <th className="px-6 py-3">Route</th>
-                <th className="px-6 py-3">Estimated Arrival</th>
+                <th className="px-6 py-3">Next Stop / ETA</th>
                 <th className="px-6 py-3">Status</th>
                 <th className="px-6 py-3 text-right">Action</th>
               </tr>
@@ -104,8 +105,8 @@ export default function TripProgressList() {
                   <td className="px-6 py-4 font-semibold text-slate-900">{t.eta}</td>
                   <td className="px-6 py-4">
                     <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
-                      t.status === 'In Transit' ? 'bg-blue-50 text-blue-700 border border-blue-100' :
-                      t.status === 'Dispatched' ? 'bg-amber-50 text-amber-700 border border-amber-100' :
+                      t.status === 'In transit' ? 'bg-blue-50 text-blue-700 border border-blue-100' :
+                      t.status === 'Scheduled' ? 'bg-amber-50 text-amber-700 border border-amber-100' :
                       'bg-emerald-50 text-emerald-700 border border-emerald-100'
                     }`}>
                       {t.status}
@@ -118,6 +119,11 @@ export default function TripProgressList() {
                   </td>
                 </tr>
               ))}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan="7" className="px-6 py-10 text-center text-slate-500">No trips found for this store.</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
