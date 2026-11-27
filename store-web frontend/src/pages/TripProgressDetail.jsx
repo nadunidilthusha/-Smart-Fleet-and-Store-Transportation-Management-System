@@ -50,10 +50,26 @@ export default function TripProgressDetail() {
   const liveCoords = isArrived ? [7.2906, 80.6337] : [7.1540, 80.2070];
   const destCoords = [7.2906, 80.6337];
 
-  const handleConfirmReceipt = () => {
-    // Add API call here if you want to save receipt confirmation
-    setReceiptConfirmed(true);
-    alert(`Success! Goods for trip ${id} received.`);
+// Add this state near your other states:
+const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleConfirmReceipt = async () => {
+    setIsSubmitting(true);
+    try {
+      // API call to backend to mark as complete
+      await apiClient.patch(`/store/trips/${id}/complete`);
+      
+      setReceiptConfirmed(true);
+      alert(`Success! Goods for trip ${id} received and Trip marked as Completed.`);
+      
+      // Optional: Redirect back to list after 2 seconds
+      setTimeout(() => navigate('/trip-progress'), 2000);
+    } catch (err) {
+      console.error(err);
+      alert(err.response?.data?.message || "Failed to confirm receipt. Try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   if (loading) return <div className="p-10 text-center text-slate-500">Loading trip details...</div>;
@@ -161,10 +177,20 @@ export default function TripProgressDetail() {
             </div>
 
             {receiptConfirmed ? (
-              <div className="mt-4 w-full py-3 bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-sm rounded-lg text-center">✓ Receipt Confirmed</div>
+              <div className="mt-4 w-full py-3 bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold text-sm rounded-lg text-center">
+                ✓ Receipt Confirmed & Trip Completed
+              </div>
             ) : (
-              <button onClick={handleConfirmReceipt} disabled={!isArrived} className={`mt-4 w-full py-3 font-semibold text-sm rounded-lg transition-all ${isArrived ? 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer' : 'bg-blue-100 text-blue-400 cursor-not-allowed'}`}>
-                {isArrived ? 'Confirm Receipt of Goods' : 'Confirm Receipt (Disabled)'}
+              <button 
+                onClick={handleConfirmReceipt} 
+                disabled={!isArrived || isSubmitting} 
+                className={`mt-4 w-full py-3 font-semibold text-sm rounded-lg transition-all ${
+                  isArrived && !isSubmitting
+                    ? 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer' 
+                    : 'bg-blue-100 text-blue-400 cursor-not-allowed'
+                }`}
+              >
+                {isSubmitting ? 'Confirming...' : isArrived ? 'Confirm Receipt of Goods' : 'Confirm Receipt (Disabled)'}
               </button>
             )}
           </div>

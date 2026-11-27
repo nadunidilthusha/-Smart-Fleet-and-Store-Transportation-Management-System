@@ -12,3 +12,9 @@ export const getOne = asyncHandler(async (req, res) => {
   const result = await service.getOneStoreTrip(req.params.id, req.user);
   res.json(result);
 });
+
+// PATCH /api/store/trips/:id/complete
+export const completeTrip = asyncHandler(async (req, res) => {
+  const result = await service.completeStoreTrip(req.params.id, req.user);
+  res.json(result);
+});
