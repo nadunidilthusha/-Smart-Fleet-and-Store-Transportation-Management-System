@@ -1,16 +1,18 @@
 import apiClient from "./apiClient";
 
+const unwrap = (res) => (res && typeof res === "object" && "data" in res ? res.data : res);
+
 export async function getNotifications() {
-  const { data } = await apiClient.get("/store/notifications");
-  return data;
+  const res = await apiClient.get("/store/notifications");
+  return unwrap(res);
 }
 
 export async function markNotificationRead(id) {
-  const { data } = await apiClient.patch(`/store/notifications/${id}`, { read: true });
-  return data;
+  const res = await apiClient.patch(`/store/notifications/${id}`, { read: true });
+  return unwrap(res);
 }
 
 export async function markAllNotificationsRead() {
-  const { data } = await apiClient.patch("/store/notifications/read-all");
-  return data;
+  const res = await apiClient.patch("/store/notifications/read-all");
+  return unwrap(res);
 }

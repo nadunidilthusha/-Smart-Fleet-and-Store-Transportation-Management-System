@@ -4,12 +4,11 @@ import Item from "../items/items.model.js";
 import User from "../users/users.model.js";
 import Trip from "../trips/trips.model.js";
 import ApiError from "../../utils/ApiError.js";
-import { notifyAdmins } from "../notifications/notifications.service.js";
+import { notifyAdmins, notifyStore } from "../notifications/notifications.service.js";
 import { nextCode } from "../../utils/sequence.js";
 import runInTransaction from "../../utils/transaction.js";
 import { releaseBookingFromTrips } from "../trips/trips.service.js";
-import { reserveSlotForBooking } from "../schedule/schedule.service.js";
-import { notifyStore } from "../notifications/notifications.service.js";
+import { reserveSlotForBooking, releaseSlotById } from "../schedule/schedule.service.js";
 import { assertNotHandedOver, closeConfirmationForBooking } from "../confirmation/confirmation.service.js";
 
 const pad = (n) => String(n).padStart(2, "0");
@@ -18,7 +17,7 @@ const pad = (n) => String(n).padStart(2, "0");
 const codePrefix = (d) => `BK-${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
 
 /* =====================================================================
-   1. ADMIN PORTAL
+1. ADMIN PORTAL
    ===================================================================== */
 
 // Fill in store names, the requester and the item details
@@ -141,26 +140,39 @@ export async function createBooking(input, user) {
 
   await booking.populate(POPULATE);
 
-  // Show the new booking in the Notifications page
+  // Notify Admins and both Pickup & Destination Stores
   const units = input.items.reduce((sum, line) => sum + line.quantity, 0);
   const urgent = input.priority === "Urgent";
-  await notifyAdmins({
+  const summaryMsg = `${user.name} created ${code} (${pickup.name} to ${destination.name}) for ${units.toLocaleString("en-US")} units.`;
+
+  const storePayload = {
     type: "booking",
     severity: urgent ? "warning" : "info",
     title: urgent ? "Urgent booking created" : "New booking created",
-    message: `${user.name} created ${code} (${pickup.name} to ${destination.name}) for ${units.toLocaleString("en-US")} units.`,
-    link: `/bookings?booking=${code}`,
-  });
+    message: summaryMsg,
+    link: `/bookings/${code}`,
+  };
+
+  await Promise.all([
+    notifyAdmins({
+      type: "booking",
+      severity: urgent ? "warning" : "info",
+      title: urgent ? "Urgent booking created" : "New booking created",
+      message: summaryMsg,
+      link: `/bookings?booking=${code}`,
+    }),
+    notifyStore({ storeId: pickup._id, ...storePayload }),
+    notifyStore({ storeId: destination._id, ...storePayload }),
+  ]);
 
   return toBookingResponse(booking.toObject());
 }
 
 // PATCH /api/bookings/:id/status  (approve, request changes or reject a pending booking)
-// PATCH /api/bookings/:id/status  (approve, request changes or reject a pending booking)
 export async function reviewBooking(code, { status, comment }) {
   // 1. Get the booking first to check pickup and requestedFor times
   const existing = await Booking.findOne({ code, status: "Pending" });
-  
+
   if (!existing) {
     const exists = await Booking.exists({ code });
     throw exists
@@ -168,13 +180,34 @@ export async function reviewBooking(code, { status, comment }) {
       : ApiError.notFound("Booking not found");
   }
 
-  // 2. If approving, try to reserve the slot FIRST (BE-6 & BE-7)
+  // 2. If approving, reserve slots for both stores (BE-6 & BE-7)
+  let pickupSlot = null;
   if (status === "Approved") {
-    await reserveSlotForBooking({
-      storeId: existing.pickup,
-      requestedFor: existing.requestedFor,
-      bookingId: existing._id
-    });
+    try {
+      pickupSlot = await reserveSlotForBooking({
+        storeId: existing.pickup,
+        requestedFor: existing.requestedFor,
+        bookingId: existing._id,
+      });
+
+      if (existing.destination) {
+        await reserveSlotForBooking({
+          storeId: existing.destination,
+          requestedFor: existing.requestedFor,
+          bookingId: existing._id,
+        });
+      }
+    } catch (error) {
+      // Roll back pickup slot if destination slot failed
+      if (pickupSlot?._id) {
+        await releaseSlotById(pickupSlot._id);
+      }
+      if (error instanceof ApiError) {
+        error.message = `Cannot approve booking: ${error.message}`;
+        throw error;
+      }
+      throw ApiError.badRequest(`Cannot approve booking: ${error.message}`);
+    }
   }
 
   // 3. Atomically update the status
@@ -190,32 +223,41 @@ export async function reviewBooking(code, { status, comment }) {
     throw ApiError.conflict("Booking was already reviewed by another admin.");
   }
 
-  // 4. Notify Admins (existing code)
+  // 4. Notify Admins
   const decision = {
     Approved: { title: "Booking approved", message: `${code} was approved and is ready for trip planning.`, severity: "info" },
     "Changes requested": { title: "Changes requested", message: `${code} is waiting for the store to make the requested changes.`, severity: "info" },
     Rejected: { title: "Booking rejected", message: `${code} was rejected.`, severity: "warning" },
   }[status];
-  
+
+  const notifyTasks = [];
   if (decision) {
-    await notifyAdmins({ type: "booking", ...decision, link: `/bookings?booking=${code}` });
+    notifyTasks.push(notifyAdmins({ type: "booking", ...decision, link: `/bookings?booking=${code}` }));
   }
 
-  // 5. NEW: Notify the Store (FE-8 Support)
-  await notifyStore({
-    storeId: existing.pickup,
+  // 5. Notify BOTH the Pickup Store and Destination Store (FE-8 Support)
+  const notifyPayload = {
     type: "booking",
     severity: status === "Rejected" ? "warning" : "info",
     title: `Booking ${status}`,
-    message: `${code} was ${status.toLowerCase()}. ${comment ? `Note: ${comment}` : ''}`,
-    link: `/bookings?booking=${code}`
-  });
+    message: `${code} was ${status.toLowerCase()}.${comment ? ` Note: ${comment}` : ""}`,
+    link: `/bookings/${code}`,
+  };
+
+  if (existing.pickup) {
+    notifyTasks.push(notifyStore({ storeId: existing.pickup, ...notifyPayload }));
+  }
+  if (existing.destination && String(existing.destination) !== String(existing.pickup)) {
+    notifyTasks.push(notifyStore({ storeId: existing.destination, ...notifyPayload }));
+  }
+
+  await Promise.all(notifyTasks);
 
   return toBookingResponse(updated);
 }
 
 /* =====================================================================
-   2. STORE PORTAL
+2. STORE PORTAL
    Every store only sees and changes its own bookings. The store id comes
    from the login token (req.user.storeId).
    ===================================================================== */
@@ -238,7 +280,6 @@ function requireStore(user) {
   if (!user?.storeId) throw ApiError.forbidden("Your account is not assigned to a store.");
   return String(user.storeId);
 }
-
 
 function storeStatus(booking, tripStatus) {
   switch (booking.status) {

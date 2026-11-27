@@ -3,6 +3,7 @@ import Vehicle from "../vehicles/vehicles.model.js";
 import Booking from "../bookings/bookings.model.js";
 import Store from "../stores/stores.model.js";
 import ApiError from "../../utils/ApiError.js";
+import { notifyStore } from "../notifications/notifications.service.js";
 
 // Business logic and database access for trips lives here.
 
@@ -125,24 +126,24 @@ export async function createTrip(payload) {
 
   // 2. Find Bookings
   const bookingDocs = await Booking.find({ code: { $in: bookings } });
-  
+
   // 3. Map Stops
-  const storeNames = stops.map(s => s.storeName);
+  const storeNames = stops.map((s) => s.storeName);
   const storeDocs = await Store.find({ name: { $in: storeNames } });
 
   const formattedStops = stops.map((stop, index) => {
-    const store = storeDocs.find(s => s.name === stop.storeName);
+    const store = storeDocs.find((s) => s.name === stop.storeName);
     if (!store) throw ApiError.badRequest(`Store not found: ${stop.storeName}`);
     return {
       store: store._id,
       sequence: stop.sequence,
       status: index === 0 ? "Arrived" : "Pending",
-      type: stop.type
+      type: stop.type,
     };
   });
 
   // Generate Route string e.g. "Main Store → Ja-Ela"
-  const routeString = stops.map(s => s.storeName).join(" → ");
+  const routeString = stops.map((s) => s.storeName).join(" → ");
 
   // 4. Generate Code
   const tripCount = await Trip.countDocuments();
@@ -153,18 +154,33 @@ export async function createTrip(payload) {
     code,
     route: routeString,
     vehicle: vehicle._id,
-    driver: vehicle.driver, 
-    bookings: bookingDocs.map(b => b._id),
+    driver: vehicle.driver,
+    bookings: bookingDocs.map((b) => b._id),
     stops: formattedStops,
     load: load,
     status: "Scheduled",
-    nextStop: stops[0]?.storeName || "Stop 1"
+    nextStop: stops[0]?.storeName || "Stop 1",
   });
 
   // 6. Update Bookings
   await Booking.updateMany(
-    { _id: { $in: bookingDocs.map(b => b._id) } },
+    { _id: { $in: bookingDocs.map((b) => b._id) } },
     { $set: { vehicle: vehicle._id, driver: vehicle.driver } }
+  );
+
+  // 7. Notify all Pickup & Destination stores involved in this trip
+  const uniqueStoreIds = [...new Set(formattedStops.map((s) => String(s.store)))];
+  await Promise.all(
+    uniqueStoreIds.map((storeId) =>
+      notifyStore({
+        storeId,
+        type: "trip",
+        severity: "info",
+        title: "New trip scheduled",
+        message: `Trip ${code} (${routeString}) has been scheduled with vehicle ${vehicle.plate}.`,
+        link: `/trip-progress/${code}`,
+      })
+    )
   );
 
   return trip;
@@ -181,13 +197,13 @@ export async function getStoreTrips(user) {
     .sort({ createdAt: -1 })
     .lean();
 
-  return trips.map(trip => ({
+  return trips.map((trip) => ({
     code: trip.code,
     status: trip.status,
-    nextStop: trip.nextStop || 'Calculating...',
+    nextStop: trip.nextStop || "Calculating...",
     vehicle: trip.vehicle,
     stops: trip.stops,
-    bookings: trip.bookings
+    bookings: trip.bookings,
   }));
 }
 
@@ -214,15 +230,12 @@ export async function completeStoreTrip(tripCode, user) {
 
   // 2. Update Trip Status
   trip.status = "Completed";
-  trip.stops = trip.stops.map(stop => ({ ...stop, status: "Completed" })); // Mark all stops completed
+  trip.stops = trip.stops.map((stop) => ({ ...stop, status: "Completed" })); // Mark all stops completed
   await trip.save();
 
   // 3. Update Bookings inside this trip to 'Completed'
   if (trip.bookings && trip.bookings.length > 0) {
-    await Booking.updateMany(
-      { _id: { $in: trip.bookings } },
-      { $set: { status: "Completed" } }
-    );
+    await Booking.updateMany({ _id: { $in: trip.bookings } }, { $set: { status: "Completed" } });
   }
 
   // 4. Free up the vehicle

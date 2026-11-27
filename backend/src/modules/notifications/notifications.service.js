@@ -6,6 +6,8 @@ import { emitToAdmins } from "../../sockets/index.js";
 
 export const ADMIN_RECIPIENT = ROLES.SYSTEM_ADMIN;
 const OBJECT_ID = /^[a-f\d]{24}$/i;
+const storeRecipient = (storeId) => `store:${String(storeId)}`;
+const storeRecipientFilter = (storeId) => ({ $in: [storeRecipient(storeId), String(storeId)] });
 
 export function toNotificationResponse(n) {
   return {
@@ -65,26 +67,40 @@ export async function notifyAdmins({ type, severity = "info", title, message, li
 /* ==================== 2. STORE NOTIFICATIONS (FE-8 Support) ==================== */
 
 export async function notifyStore({ storeId, type, severity = "info", title, message, link = "" }) {
+  console.log("[DEBUG notifyStore] called with:", { storeId: String(storeId), title });
+  if (!storeId) return null;
   try {
-    // Store notifications use the storeId as the recipient
-    const doc = await Notification.create({ type, severity, title, message, link, recipient: storeId });
-    // If you have socket rooms for stores, you can emit here: emitToStore(storeId, ...)
+    const doc = await Notification.create({
+      type,
+      severity,
+      title,
+      message,
+      link,
+      recipient: storeRecipient(storeId),
+    });
+    console.log("[DEBUG notifyStore] SAVED:", { id: doc._id, recipient: doc.recipient });
     return doc;
   } catch (err) {
+    console.error("[DEBUG notifyStore] FAILED:", err.message);
     logger.error("Could not create store notification:", err.message);
     return null;
   }
 }
 
 export async function listStoreNotifications(storeId) {
-  const docs = await Notification.find({ recipient: storeId }).sort({ createdAt: -1, _id: -1 }).limit(100).lean();
+  console.log("[DEBUG listStoreNotifications] querying for storeId:", storeId, "filter:", storeRecipientFilter(storeId));
+  const docs = await Notification.find({ recipient: storeRecipientFilter(storeId) })
+    .sort({ createdAt: -1, _id: -1 })
+    .limit(100)
+    .lean();
+  console.log("[DEBUG listStoreNotifications] found:", docs.length);
   return docs.map(toNotificationResponse);
 }
 
 export async function setStoreNotificationRead(id, read, storeId) {
   if (!OBJECT_ID.test(String(id))) throw ApiError.notFound("Notification not found");
   const updated = await Notification.findOneAndUpdate(
-    { _id: id, recipient: storeId },
+    { _id: id, recipient: storeRecipientFilter(storeId) },
     { $set: { read } },
     { new: true }
   ).lean();
@@ -93,6 +109,9 @@ export async function setStoreNotificationRead(id, read, storeId) {
 }
 
 export async function markAllStoreRead(storeId) {
-  const result = await Notification.updateMany({ recipient: storeId, read: false }, { $set: { read: true } });
+  const result = await Notification.updateMany(
+    { recipient: storeRecipientFilter(storeId), read: false },
+    { $set: { read: true } }
+  );
   return { ok: true, updated: result.modifiedCount ?? 0 };
 }
