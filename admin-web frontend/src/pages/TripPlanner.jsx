@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import OverrideModal from '../components/trip/OverrideModal';
-import apiClient from '../api/apiClient';
 import { createTrip } from '../api/tripApi';
+import { getBookings } from '../api/bookingApi';
+import { getVehicles } from '../api/vehicleApi';
 
 const TripPlanner = () => {
   const navigate = useNavigate();
@@ -11,7 +12,6 @@ const TripPlanner = () => {
   const [allocatedVehicle, setAllocatedVehicle] = useState(null);
   const [overrideVehicleData, setOverrideVehicleData] = useState(null);
 
-  // Real Database State
   const [dbBookings, setDbBookings] = useState([]);
   const [dbVehicles, setDbVehicles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -21,32 +21,33 @@ const TripPlanner = () => {
     { id: 2, type: 'Delivery', location: '', selectedBookings: [] }
   ]);
 
-  // Fetch real data on mount
+  // Fetch real data using API modules
   useEffect(() => {
     Promise.all([
-      apiClient.get('/bookings'),
-      apiClient.get('/vehicles')
+      getBookings(), 
+      getVehicles()
     ]).then(([bookingRes, vehicleRes]) => {
       // 1. Format Bookings (Only Approved ones)
-      const formattedBookings = bookingRes.data.bookings
+      // bookingApi returns { bookings: [...], summary: {...} }
+      const formattedBookings = (bookingRes.bookings || bookingRes)
         .filter(b => b.status === 'Approved')
         .map(b => ({
           id: b.id,
           pickup: b.pickup,
           dest: b.destination,
-          items: b.items.map(i => i.item).join(', '),
+          items: b.items?.map(i => i.item).join(', ') || '',
           qty: `${b.units} units`,
-          weight: b.units, // Treating units as weight for the UI capacity logic
+          weight: b.units,
           priority: b.priority
         }));
       setDbBookings(formattedBookings);
 
       // 2. Format Vehicles
-      const formattedVehicles = vehicleRes.data.map(v => ({
+      const formattedVehicles = (vehicleRes.data || vehicleRes).map(v => ({
         id: v.plate,
         type: v.type,
-        driver: v.driver?.name || 'Unassigned',
-        loc: v.hub?.name || 'Unknown',
+        driver: v.driver || 'Unassigned',
+        loc: v.hub || 'Unknown',
         maxWeight: parseInt(v.capacity.replace(/,/g, '')) || 5000
       }));
       setDbVehicles(formattedVehicles);
@@ -71,7 +72,6 @@ const TripPlanner = () => {
   const pendingDestinations = [...new Set(activeBookings.map(b => b.dest))];
   const LOCATIONS = [...new Set(dbBookings.map(b => b.pickup).concat(dbBookings.map(b => b.dest)))];
 
-  // Calculate vehicle match scores
   const vehicles = useMemo(() => {
     return dbVehicles.map(v => {
       let matchScore = 100;
@@ -164,7 +164,6 @@ const TripPlanner = () => {
     }
 
     try {
-      // Send to real backend
       await createTrip({
         vehiclePlate: allocatedVehicle,
         bookings: allSelectedIds,
@@ -176,7 +175,7 @@ const TripPlanner = () => {
         load: totalWeight
       });
       alert(`Success! Route confirmed and vehicle ${allocatedVehicle} allocated.`);
-      navigate('/trip-planner');
+      navigate('/trips');
     } catch (err) {
       alert(err.response?.data?.message || "Failed to create trip.");
     }
@@ -186,18 +185,16 @@ const TripPlanner = () => {
 
   return (
     <div className="flex-1 flex flex-col min-w-0 bg-slate-50 p-6 overflow-auto">
-      {/* Header */}
       <div className="flex justify-between items-start mb-6">
         <div>
           <div className="text-xs text-gray-500 mb-1">Operations / Trip Planning / New</div>
           <h1 className="text-2xl font-bold text-gray-900">Unified Route & Allocation</h1>
         </div>
         <div className="flex gap-3">
-          <button onClick={() => navigate('/trip-planner')} className="px-4 py-2 bg-white border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 shadow-sm">Cancel</button>
+          <button onClick={() => navigate('/trips')} className="px-4 py-2 bg-white border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 shadow-sm">Cancel</button>
         </div>
       </div>
 
-      {/* Top Summary Metric Cards */}
       <div className="grid grid-cols-4 gap-5 mb-6">
         <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Total Payload</p>
@@ -218,7 +215,6 @@ const TripPlanner = () => {
       </div>
 
       <div className="flex gap-6 h-full pb-10">
-        {/* LEFT COLUMN: DYNAMIC ROUTE PLANNER */}
         <div className="w-1/2 flex flex-col gap-6">
           <div className="bg-white rounded-lg border border-gray-200 shadow-sm flex flex-col">
             <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
@@ -337,7 +333,6 @@ const TripPlanner = () => {
           </div>
         </div>
 
-        {/* RIGHT COLUMN: SMART VEHICLE ALLOCATION */}
         <div className="w-1/2 flex flex-col gap-6">
           <div className="bg-white rounded-lg border border-gray-200 shadow-sm flex flex-col flex-1 p-5">
             <div className="flex justify-between items-start mb-5 pb-4 border-b border-gray-100">

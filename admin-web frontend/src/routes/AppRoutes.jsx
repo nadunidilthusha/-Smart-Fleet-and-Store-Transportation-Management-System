@@ -10,7 +10,7 @@ import BookingDetail from "../pages/BookingDetail";
 import VehicleDashboard from "../pages/VehicleDashboard";
 import AddVehicle from "../pages/Vehicles/AddVehicle";
 import TripPlannerList from "../pages/TripPlannerList";
-import TripPlanner from "../pages/TripPlanner"; // <-- Now using the unified master screen
+import TripPlanner from "../pages/TripPlanner"; 
 import Schedule from "../pages/Schedule";
 import LiveMap from "../pages/LiveMap";
 import { ROLES } from "../utils/roles";
@@ -42,12 +42,13 @@ export default function AppRoutes() {
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="bookings" element={<Bookings />} />
           <Route path="bookings/:id" element={<BookingDetail />} />
-          <Route path="trips" element={<ComingSoon title="Trips" />} />
-
-          {/* CLEANED UP TRIP PLANNER ROUTES */}
+          
+          {/* Trips List */}
+          <Route path="trips" element={<TripPlannerList />} />
           <Route path="trip-planner" element={<TripPlannerList />} />
+          
+          {/* New Trip Creation */}
           <Route path="trip-planner/new" element={<TripPlanner />} />
-          {/* Removed the /allocation route! */}
 
           <Route path="schedule" element={<Schedule />} />
           <Route path="live-map" element={<LiveMap />} />
