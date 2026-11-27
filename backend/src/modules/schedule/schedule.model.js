@@ -13,7 +13,7 @@ const schema = new mongoose.Schema({
 }, { timestamps: true });
 
 // BE-2: Index for slot overlap and date queries
-schema.index({ store: 1, date: 1, startTime: 1 }, { unique: true });
+schema.index({ store: 1, date: 1, startTime: 1 });
 schema.index({ store: 1, date: 1 }); 
 
 schema.plugin(toJSON);
