@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Plus } from 'lucide-react';
 import apiClient from '../api/apiClient';
 
@@ -28,13 +28,16 @@ const getDispatchDate = (trip) => {
   return null;
 };
 
+const TABS = ['All', 'Scheduled', 'In transit', 'Completed', 'Drafts'];
+
 const TripPlannerList = () => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('All');
+  const [searchParams] = useSearchParams();
+  const initialTab = TABS.includes(searchParams.get('tab')) ? searchParams.get('tab') : 'All';
+
+  const [activeTab, setActiveTab] = useState(initialTab);
   const [trips, setTrips] = useState([]);
   const [loading, setLoading] = useState(true);
-
-  const tabs = ['All', 'Scheduled', 'In transit', 'Completed'];
 
   const fetchTrips = () => {
     apiClient
@@ -44,7 +47,7 @@ const TripPlannerList = () => {
           .filter((trip) => trip.status !== 'Unallocated')
           .map((trip) => {
             const sortedStops = [...(trip.stops ?? [])].sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0));
-            const origin = sortedStops[0]?.store?.name || 'Unknown Origin';
+            const origin = sortedStops[0]?.store?.name || 'Not set';
 
             // Collect all Delivery stops; for older trips without stop.type, use all stops after origin
             const deliveryStops = sortedStops.filter((s) => s.type === 'Delivery');
@@ -89,7 +92,14 @@ const TripPlannerList = () => {
     }
   };
 
-  const filteredTrips = activeTab === 'All' ? trips : trips.filter((t) => t.status === activeTab);
+  const draftCount = trips.filter((t) => t.status === 'Draft').length;
+
+  const filteredTrips =
+    activeTab === 'All'
+      ? trips
+      : activeTab === 'Drafts'
+      ? trips.filter((t) => t.status === 'Draft')
+      : trips.filter((t) => t.status === activeTab);
 
   if (loading) return <div className="p-10 text-center text-gray-500">Loading trips...</div>;
 
@@ -112,17 +122,22 @@ const TripPlannerList = () => {
 
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col">
         <div className="flex gap-5 border-b border-gray-200 px-5 pt-2">
-          {tabs.map((tab) => (
+          {TABS.map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`-mb-px py-3 text-[13px] font-medium border-b-2 transition-colors ${
+              className={`-mb-px py-3 text-[13px] font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
                 activeTab === tab
                   ? 'border-blue-600 text-gray-900'
                   : 'border-transparent text-gray-500 hover:text-gray-900'
               }`}
             >
-              {tab}
+              <span>{tab}</span>
+              {tab === 'Drafts' && draftCount > 0 && (
+                <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[11px] font-bold text-amber-800">
+                  {draftCount}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -139,7 +154,7 @@ const TripPlannerList = () => {
                 <th className="px-5 py-3 font-medium border-b border-gray-200 text-right">Total Load</th>
                 <th className="px-5 py-3 font-medium border-b border-gray-200">Dispatch Date</th>
                 <th className="px-5 py-3 font-medium border-b border-gray-200">Created</th>
-                <th className="px-5 py-3 font-medium border-b border-gray-200">Update Status</th>
+                <th className="px-5 py-3 font-medium border-b border-gray-200">Status / Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -167,7 +182,7 @@ const TripPlannerList = () => {
                   <td className="px-5 py-3 text-gray-700">{trip.origin}</td>
                   <td className="px-5 py-3" title={trip.routeSummary}>
                     {trip.destinations.length === 0 ? (
-                      <span className="text-gray-400">Unknown Destination</span>
+                      <span className="text-gray-400">Not set</span>
                     ) : trip.destinations.length === 1 ? (
                       <span className="text-gray-700">{trip.destinations[0]}</span>
                     ) : (
@@ -211,30 +226,45 @@ const TripPlannerList = () => {
                   <td className="px-5 py-3 text-gray-500 text-xs">{trip.createdDate}</td>
 
                   <td className="px-5 py-3">
-                    <select
-                      value={trip.status}
-                      onChange={(e) => handleStatusChange(trip.id, e.target.value)}
-                      className={`px-2 py-1 rounded text-[12px] font-bold border outline-none cursor-pointer ${
-                        trip.status === 'Scheduled'
-                          ? 'bg-amber-50 text-amber-700 border-amber-200'
-                          : trip.status === 'In transit'
-                          ? 'bg-blue-50 text-blue-700 border-blue-200'
-                          : trip.status === 'Completed'
-                          ? 'bg-green-50 text-green-700 border-green-200'
-                          : 'bg-gray-100 text-gray-700 border-gray-200'
-                      }`}
-                    >
-                      <option value="Scheduled">Scheduled</option>
-                      <option value="In transit">In transit</option>
-                      <option value="Completed">Completed</option>
-                    </select>
+                    {trip.status === 'Draft' ? (
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                          Draft
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/trip-planner/new?draft=${encodeURIComponent(trip.id)}`)}
+                          className="px-2.5 py-1 rounded text-[12px] font-semibold bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 transition-colors"
+                        >
+                          Continue
+                        </button>
+                      </div>
+                    ) : (
+                      <select
+                        value={trip.status}
+                        onChange={(e) => handleStatusChange(trip.id, e.target.value)}
+                        className={`px-2 py-1 rounded text-[12px] font-bold border outline-none cursor-pointer ${
+                          trip.status === 'Scheduled'
+                            ? 'bg-amber-50 text-amber-700 border-amber-200'
+                            : trip.status === 'In transit'
+                            ? 'bg-blue-50 text-blue-700 border-blue-200'
+                            : trip.status === 'Completed'
+                            ? 'bg-green-50 text-green-700 border-green-200'
+                            : 'bg-gray-100 text-gray-700 border-gray-200'
+                        }`}
+                      >
+                        <option value="Scheduled">Scheduled</option>
+                        <option value="In transit">In transit</option>
+                        <option value="Completed">Completed</option>
+                      </select>
+                    )}
                   </td>
                 </tr>
               ))}
               {filteredTrips.length === 0 && (
                 <tr>
                   <td colSpan="9" className="px-5 py-8 text-center text-gray-500 text-sm">
-                    No trip plans found.
+                    {activeTab === 'Drafts' ? 'No saved drafts yet.' : 'No trip plans found.'}
                   </td>
                 </tr>
               )}

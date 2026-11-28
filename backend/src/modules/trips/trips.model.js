@@ -16,11 +16,11 @@ const schema = new mongoose.Schema(
     vehicle: { type: mongoose.Schema.Types.ObjectId, ref: "Vehicle" },
     driver: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     bookings: [{ type: mongoose.Schema.Types.ObjectId, ref: "Booking" }],
-    load: { type: Number, default: 0 }, // Percentage
+    load: { type: Number, default: 0 },
     scheduledAt: { type: Date }, // Planned dispatch date & time chosen in Trip Planner
     status: {
       type: String,
-      enum: ["Scheduled", "In transit", "Delayed", "Completed", "Unallocated"],
+      enum: ["Draft", "Scheduled", "In transit", "Delayed", "Completed", "Unallocated"],
       default: "Scheduled",
     },
     nextStop: { type: String },
