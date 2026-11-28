@@ -36,7 +36,8 @@ export async function getScheduleData({ storeId, startDate, endDate }) {
     if (endDate) slotFilter.date.$lte = endDate;
   }
 
-  const tripFilter = { status: { $ne: "Unallocated" } };
+  // Exclude both Unallocated and Draft trips from the live Schedule timeline
+  const tripFilter = { status: { $nin: ["Unallocated", "Draft"] } };
   if (storeId) tripFilter["stops.store"] = storeId;
 
   const [slots, allTrips, stores, vehicles] = await Promise.all([

@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import OverrideModal from '../components/trip/OverrideModal';
 import { createTrip } from '../api/tripApi';
 import { getBookings } from '../api/bookingApi';
 import { getVehicles } from '../api/vehicleApi';
+import apiClient from '../api/apiClient';
 
 const pad = (n) => String(n).padStart(2, '0');
 
@@ -26,8 +27,21 @@ const formatBookingTime = (value) => {
   return `${d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}, ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 
+const createInitialStops = () => [
+  { id: 1, type: 'Pickup', location: '', selectedBookings: [] },
+  { id: 2, type: 'Delivery', location: '', selectedBookings: [] },
+];
+
 const TripPlanner = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const initialDraftCode = searchParams.get('draft') || '';
+
+  const [draftCode, setDraftCode] = useState(initialDraftCode);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [toastMsg, setToastMsg] = useState(null); // { text, code }
+  const [confirmAction, setConfirmAction] = useState(null); // 'reset' | 'cancel' | null
+
   const [isOverrideModalOpen, setIsOverrideModalOpen] = useState(false);
   const [openDropdownId, setOpenDropdownId] = useState(null);
   const [allocatedVehicle, setAllocatedVehicle] = useState(null);
@@ -48,15 +62,17 @@ const TripPlanner = () => {
   const [onlyWithDriver, setOnlyWithDriver] = useState(false);
   const [onlyFitsLoad, setOnlyFitsLoad] = useState(false);
 
-  const [stops, setStops] = useState([
-    { id: 1, type: 'Pickup', location: '', selectedBookings: [] },
-    { id: 2, type: 'Delivery', location: '', selectedBookings: [] }
-  ]);
+  const [stops, setStops] = useState(createInitialStops);
 
-  // Fetch real data using API modules
+  // Fetch real data (and existing draft if resuming from Trip History -> Drafts)
   useEffect(() => {
-    Promise.all([getBookings(), getVehicles()])
-      .then(([bookingRes, vehicleRes]) => {
+    const requests = [getBookings(), getVehicles()];
+    if (initialDraftCode) {
+      requests.push(apiClient.get(`/trips/${encodeURIComponent(initialDraftCode)}`).then((r) => r.data));
+    }
+
+    Promise.all(requests)
+      .then(([bookingRes, vehicleRes, draftTrip]) => {
         // 1. Format Approved Bookings with requestedFor date/time
         const formattedBookings = (bookingRes.bookings || bookingRes)
           .filter((b) => b.status === 'Approved')
@@ -73,13 +89,6 @@ const TripPlanner = () => {
           }));
         setDbBookings(formattedBookings);
 
-        // If today has no approved bookings, auto-select the earliest date that has one
-        const todayStr = toLocalDateStr(new Date());
-        const bookingDates = [...new Set(formattedBookings.map((b) => b.requestedDate).filter(Boolean))].sort();
-        if (bookingDates.length > 0 && !bookingDates.includes(todayStr)) {
-          setPlanDate(bookingDates[0]);
-        }
-
         // 2. Format Vehicles safely
         const formattedVehicles = (vehicleRes.data || vehicleRes).map((v) => ({
           id: v.plate,
@@ -90,13 +99,75 @@ const TripPlanner = () => {
           maxWeight: parseInt(String(v.capacity ?? '').replace(/[^\d]/g, ''), 10) || 5000,
         }));
         setDbVehicles(formattedVehicles);
+
+        // 3. Hydrate state if resuming a saved draft
+        if (draftTrip) {
+          setDraftCode(draftTrip.code || initialDraftCode);
+
+          if (draftTrip.scheduledAt) {
+            const d = new Date(draftTrip.scheduledAt);
+            if (!Number.isNaN(d.getTime())) {
+              setPlanDate(toLocalDateStr(d));
+              setPlanTime(`${pad(d.getHours())}:${pad(d.getMinutes())}`);
+            }
+          }
+
+          if (draftTrip.vehicle?.plate) {
+            setAllocatedVehicle(draftTrip.vehicle.plate);
+          }
+
+          const draftBookingCodes = (draftTrip.bookings ?? [])
+            .map((b) => (typeof b === 'string' ? b : b?.code))
+            .filter(Boolean);
+
+          const sortedDraftStops = [...(draftTrip.stops ?? [])].sort(
+            (a, b) => (a.sequence ?? 0) - (b.sequence ?? 0)
+          );
+
+          if (sortedDraftStops.length > 0) {
+            const assignedBookings = new Set();
+            const restoredStops = sortedDraftStops.map((s, idx) => {
+              const locName = s.store?.name || '';
+              const stopType = s.type || (idx === 0 ? 'Pickup' : 'Delivery');
+              let selectedBookings = [];
+
+              if (stopType === 'Pickup' && locName) {
+                selectedBookings = draftBookingCodes.filter((code) => {
+                  if (assignedBookings.has(code)) return false;
+                  const bk = formattedBookings.find((x) => x.id === code);
+                  if (bk && bk.pickup === locName) {
+                    assignedBookings.add(code);
+                    return true;
+                  }
+                  return false;
+                });
+              }
+
+              return {
+                id: idx + 1,
+                type: stopType,
+                location: locName,
+                selectedBookings,
+              };
+            });
+            setStops(restoredStops);
+          }
+        } else {
+          // If today has no approved bookings, auto-select the earliest date that has one
+          const todayStr = toLocalDateStr(new Date());
+          const bookingDates = [...new Set(formattedBookings.map((b) => b.requestedDate).filter(Boolean))].sort();
+          if (bookingDates.length > 0 && !bookingDates.includes(todayStr)) {
+            setPlanDate(bookingDates[0]);
+          }
+        }
+
         setLoading(false);
       })
       .catch((err) => {
         console.error('Failed to load data', err);
         setLoading(false);
       });
-  }, []);
+  }, [initialDraftCode]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -105,6 +176,13 @@ const TripPlanner = () => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Auto-hide small draft saved message after 6 seconds
+  useEffect(() => {
+    if (!toastMsg) return;
+    const timer = setTimeout(() => setToastMsg(null), 6000);
+    return () => clearTimeout(timer);
+  }, [toastMsg]);
 
   // Group counts of approved bookings by requestedDate for quick-select pills
   const availableDateCounts = useMemo(() => {
@@ -259,6 +337,73 @@ const TripPlanner = () => {
     );
   };
 
+  // Save current work as a Draft (no vehicle required)
+  const handleSaveDraft = async ({ navigateAfter = false } = {}) => {
+    const filledStops = stops.filter((s) => s.location);
+    if (filledStops.length === 0 && allSelectedIds.length === 0 && !allocatedVehicle) {
+      setToastMsg({
+        type: 'warning',
+        text: 'Select at least one stop location or booking before saving a draft.',
+      });
+      return false;
+    }
+
+    setSavingDraft(true);
+    const scheduledAt = planDate && planTime ? new Date(`${planDate}T${planTime}:00`).toISOString() : undefined;
+
+    try {
+      const saved = await createTrip({
+        isDraft: true,
+        draftCode: draftCode || undefined,
+        vehiclePlate: allocatedVehicle || undefined,
+        bookings: allSelectedIds,
+        stops: filledStops.map((s, index) => ({
+          storeName: s.location,
+          sequence: index + 1,
+          type: s.type,
+        })),
+        load: totalWeight,
+        scheduledAt,
+      });
+
+      const savedCode = saved?.code || draftCode || 'Draft';
+      setDraftCode(savedCode);
+
+      if (navigateAfter) {
+        navigate('/trips');
+      } else {
+        setToastMsg({
+          type: 'success',
+          code: savedCode,
+          text: `Draft ${savedCode} saved. You can finish allocation anytime from Trip History → Drafts.`,
+        });
+      }
+      return true;
+    } catch (err) {
+      setToastMsg({
+        type: 'error',
+        text: err.response?.data?.message || 'Could not save draft. Try again.',
+      });
+      return false;
+    } finally {
+      setSavingDraft(false);
+    }
+  };
+
+  // Reset form after double confirmation
+  const executeReset = () => {
+    setStops(createInitialStops());
+    setAllocatedVehicle(null);
+    setPlanTime('08:00');
+    setVehicleSearch('');
+    setVehicleTypeFilter('All');
+    setOnlyWithDriver(false);
+    setOnlyFitsLoad(false);
+    setOpenDropdownId(null);
+    setConfirmAction(null);
+    setToastMsg({ type: 'info', text: 'Trip planner form has been reset.' });
+  };
+
   const handleFinalConfirm = async () => {
     if (!planDate || !planTime) return alert('Validation Error: Please select a dispatch date and time.');
     if (stops.some((s) => !s.location)) return alert('Validation Error: Please select a location for all stops.');
@@ -289,6 +434,8 @@ const TripPlanner = () => {
 
     try {
       await createTrip({
+        isDraft: false,
+        draftCode: draftCode || undefined,
         vehiclePlate: allocatedVehicle,
         bookings: allSelectedIds,
         stops: stops.map((s, index) => ({
@@ -310,20 +457,82 @@ const TripPlanner = () => {
 
   return (
     <div className="flex-1 flex flex-col min-w-0 bg-slate-50 p-6 overflow-auto">
-      <div className="flex justify-between items-start mb-5 gap-4">
+      <div className="flex justify-between items-start mb-4 gap-4">
         <div>
-          <div className="text-xs text-gray-500 mb-1">Operations / Trip Planning / New</div>
-          <h1 className="text-2xl font-bold text-gray-900">Unified Route & Allocation</h1>
+          <div className="text-xs text-gray-500 mb-1">
+            Operations / Trip Planning / {draftCode ? `Draft ${draftCode}` : 'New'}
+          </div>
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-2xl font-bold text-gray-900">Unified Route &amp; Allocation</h1>
+            {draftCode && (
+              <span className="rounded-full bg-amber-100 border border-amber-200 px-2.5 py-0.5 text-xs font-semibold text-amber-800">
+                Draft: {draftCode}
+              </span>
+            )}
+          </div>
         </div>
-        <div className="flex gap-3">
+
+        {/* Top-right Actions: Reset, Cancel (double-confirm), Save Draft */}
+        <div className="flex items-center gap-2.5">
           <button
-            onClick={() => navigate('/trips')}
-            className="px-4 py-2 bg-white border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 shadow-sm"
+            type="button"
+            onClick={() => setConfirmAction('reset')}
+            className="px-3.5 py-2 bg-white border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 shadow-sm"
+          >
+            Reset
+          </button>
+          <button
+            type="button"
+            onClick={() => setConfirmAction('cancel')}
+            className="px-3.5 py-2 bg-white border border-red-200 rounded-md text-sm font-medium text-red-600 hover:bg-red-50 shadow-sm"
           >
             Cancel
           </button>
+          <button
+            type="button"
+            disabled={savingDraft}
+            onClick={() => handleSaveDraft()}
+            className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-md text-sm font-semibold shadow-sm transition-colors disabled:opacity-60"
+          >
+            {savingDraft ? 'Saving...' : draftCode ? 'Update Draft' : 'Save Draft'}
+          </button>
         </div>
       </div>
+
+      {/* Small Toast Message Banner for Draft Save / Reset Feedback */}
+      {toastMsg && (
+        <div
+          className={`mb-4 flex items-center justify-between gap-3 rounded-lg border px-4 py-2.5 text-sm shadow-xs ${
+            toastMsg.type === 'success'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+              : toastMsg.type === 'error'
+              ? 'border-red-200 bg-red-50 text-red-700'
+              : toastMsg.type === 'warning'
+              ? 'border-amber-200 bg-amber-50 text-amber-800'
+              : 'border-blue-200 bg-blue-50 text-blue-800'
+          }`}
+        >
+          <span className="font-medium">{toastMsg.text}</span>
+          <div className="flex items-center gap-3 shrink-0">
+            {toastMsg.type === 'success' && (
+              <button
+                type="button"
+                onClick={() => navigate('/trips?tab=Drafts')}
+                className="text-xs font-bold underline hover:opacity-80"
+              >
+                View Drafts
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setToastMsg(null)}
+              className="text-xs font-semibold opacity-70 hover:opacity-100"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Dispatch Schedule & Booking Date Filter Bar */}
       <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm mb-6 flex flex-wrap items-center justify-between gap-4">
@@ -811,6 +1020,61 @@ const TripPlanner = () => {
           </div>
         </div>
       </div>
+
+      {/* Double-Confirmation Modal for Reset or Cancel */}
+      {confirmAction && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl border border-gray-200">
+            <h3 className="text-lg font-bold text-gray-900">
+              {confirmAction === 'reset' ? 'Reset Trip Plan?' : 'Cancel Trip Planning?'}
+            </h3>
+            <p className="mt-2 text-sm text-gray-600">
+              {confirmAction === 'reset'
+                ? 'This will clear all selected stops, loaded bookings, and vehicle allocation on this screen. Are you sure you want to reset?'
+                : 'Any unsaved changes to this trip plan will be lost. You can save it as a draft first or discard and return to Trip History.'}
+            </p>
+
+            <div className="mt-6 flex flex-wrap justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setConfirmAction(null)}
+                className="px-4 py-2 rounded-md border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50"
+              >
+                Keep Editing
+              </button>
+
+              {confirmAction === 'cancel' && (
+                <button
+                  type="button"
+                  disabled={savingDraft}
+                  onClick={async () => {
+                    const ok = await handleSaveDraft({ navigateAfter: true });
+                    if (ok) setConfirmAction(null);
+                  }}
+                  className="px-4 py-2 rounded-md bg-amber-500 hover:bg-amber-600 text-sm font-semibold text-white disabled:opacity-60"
+                >
+                  Save Draft &amp; Leave
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirmAction === 'reset') {
+                    executeReset();
+                  } else {
+                    setConfirmAction(null);
+                    navigate('/trips');
+                  }
+                }}
+                className="px-4 py-2 rounded-md bg-red-600 hover:bg-red-700 text-sm font-semibold text-white"
+              >
+                {confirmAction === 'reset' ? 'Yes, Reset Form' : 'Discard & Leave'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <OverrideModal
         isOpen={isOverrideModalOpen}

@@ -114,80 +114,108 @@ export async function releaseBookingFromTrips({ bookingId, session = null }) {
 }
 
 /* =====================================================================
-   NEW FUNCTIONS: For Admin Trip Creation & Store Views
+   NEW FUNCTIONS: For Admin Trip Creation, Drafts & Store Views
    ===================================================================== */
 
 export async function createTrip(payload) {
-  const { vehiclePlate, bookings, stops, load, scheduledAt } = payload;
+  const { vehiclePlate, bookings = [], stops = [], load = 0, scheduledAt, isDraft = false, draftCode } = payload;
 
-  // 1. Find Vehicle
-  const vehicle = await Vehicle.findOne({ plate: vehiclePlate });
-  if (!vehicle) throw ApiError.notFound("Vehicle not found");
+  // 1. Find Vehicle (optional when saving as Draft)
+  let vehicle = null;
+  if (vehiclePlate) {
+    vehicle = await Vehicle.findOne({ plate: vehiclePlate });
+    if (!vehicle) throw ApiError.notFound("Vehicle not found");
+  } else if (!isDraft) {
+    throw ApiError.badRequest("Vehicle is required to schedule a trip");
+  }
 
   // 2. Find Bookings
-  const bookingDocs = await Booking.find({ code: { $in: bookings } });
+  const bookingDocs = bookings.length > 0 ? await Booking.find({ code: { $in: bookings } }) : [];
 
-  // 3. Map Stops
-  const storeNames = stops.map((s) => s.storeName);
-  const storeDocs = await Store.find({ name: { $in: storeNames } });
+  // 3. Map Stops (skip empty stops if saving a partial draft)
+  const validStops = stops.filter((s) => s.storeName);
+  const storeNames = validStops.map((s) => s.storeName);
+  const storeDocs = storeNames.length > 0 ? await Store.find({ name: { $in: storeNames } }) : [];
 
-  const formattedStops = stops.map((stop, index) => {
+  const formattedStops = validStops.map((stop, index) => {
     const store = storeDocs.find((s) => s.name === stop.storeName);
     if (!store) throw ApiError.badRequest(`Store not found: ${stop.storeName}`);
     return {
       store: store._id,
-      sequence: stop.sequence,
-      status: index === 0 ? "Arrived" : "Pending",
+      sequence: stop.sequence ?? index + 1,
+      status: !isDraft && index === 0 ? "Arrived" : "Pending",
       type: stop.type,
     };
   });
 
   // Generate Route string e.g. "Main Store → Ja-Ela"
-  const routeString = stops.map((s) => s.storeName).join(" → ");
+  const routeString = validStops.map((s) => s.storeName).join(" → ");
 
   // Parse scheduledAt safely if provided
   const parsedScheduledAt = scheduledAt ? new Date(scheduledAt) : null;
   const validScheduledAt =
     parsedScheduledAt && !Number.isNaN(parsedScheduledAt.getTime()) ? parsedScheduledAt : undefined;
 
-  // 4. Generate Code
-  const tripCount = await Trip.countDocuments();
-  const code = `TR-${String(tripCount + 1).padStart(4, "0")}`;
+  const targetStatus = isDraft ? "Draft" : "Scheduled";
 
-  // 5. Create Trip
-  const trip = await Trip.create({
-    code,
-    route: routeString,
-    vehicle: vehicle._id,
-    driver: vehicle.driver,
-    bookings: bookingDocs.map((b) => b._id),
-    stops: formattedStops,
-    load: load,
-    scheduledAt: validScheduledAt,
-    status: "Scheduled",
-    nextStop: stops[0]?.storeName || "Stop 1",
-  });
+  let trip;
+  if (draftCode) {
+    // Update existing draft (either keep as Draft or promote to Scheduled)
+    trip = await Trip.findOne({ code: draftCode });
+    if (!trip) throw ApiError.notFound("Draft trip not found");
 
-  // 6. Update Bookings
-  await Booking.updateMany(
-    { _id: { $in: bookingDocs.map((b) => b._id) } },
-    { $set: { vehicle: vehicle._id, driver: vehicle.driver } }
-  );
+    trip.route = routeString;
+    trip.vehicle = vehicle ? vehicle._id : undefined;
+    trip.driver = vehicle ? vehicle.driver : undefined;
+    trip.bookings = bookingDocs.map((b) => b._id);
+    trip.stops = formattedStops;
+    trip.load = load;
+    trip.scheduledAt = validScheduledAt;
+    trip.status = targetStatus;
+    trip.nextStop = validStops[0]?.storeName || "Stop 1";
+    await trip.save();
+  } else {
+    // Generate Code & create new trip
+    const tripCount = await Trip.countDocuments();
+    const code = `TR-${String(tripCount + 1).padStart(4, "0")}`;
 
-  // 7. Notify all Pickup & Destination stores involved in this trip
-  const uniqueStoreIds = [...new Set(formattedStops.map((s) => String(s.store)))];
-  await Promise.all(
-    uniqueStoreIds.map((storeId) =>
-      notifyStore({
-        storeId,
-        type: "trip",
-        severity: "info",
-        title: "New trip scheduled",
-        message: `Trip ${code} (${routeString}) has been scheduled with vehicle ${vehicle.plate}.`,
-        link: `/trip-progress/${code}`,
-      })
-    )
-  );
+    trip = await Trip.create({
+      code,
+      route: routeString,
+      vehicle: vehicle ? vehicle._id : undefined,
+      driver: vehicle ? vehicle.driver : undefined,
+      bookings: bookingDocs.map((b) => b._id),
+      stops: formattedStops,
+      load,
+      scheduledAt: validScheduledAt,
+      status: targetStatus,
+      nextStop: validStops[0]?.storeName || "Stop 1",
+    });
+  }
+
+  // Only lock bookings and notify stores when actually dispatched (not for Drafts)
+  if (!isDraft && vehicle) {
+    if (bookingDocs.length > 0) {
+      await Booking.updateMany(
+        { _id: { $in: bookingDocs.map((b) => b._id) } },
+        { $set: { vehicle: vehicle._id, driver: vehicle.driver } }
+      );
+    }
+
+    const uniqueStoreIds = [...new Set(formattedStops.map((s) => String(s.store)))];
+    await Promise.all(
+      uniqueStoreIds.map((storeId) =>
+        notifyStore({
+          storeId,
+          type: "trip",
+          severity: "info",
+          title: "New trip scheduled",
+          message: `Trip ${trip.code} (${routeString}) has been scheduled with vehicle ${vehicle.plate}.`,
+          link: `/trip-progress/${trip.code}`,
+        })
+      )
+    );
+  }
 
   return trip;
 }
@@ -195,7 +223,8 @@ export async function createTrip(payload) {
 export async function getStoreTrips(user) {
   if (!user.storeId) throw ApiError.forbidden("No store assigned");
 
-  const trips = await Trip.find({ "stops.store": user.storeId })
+  // Hide unfinished admin Drafts from the Store portal
+  const trips = await Trip.find({ "stops.store": user.storeId, status: { $ne: "Draft" } })
     .populate("vehicle", "plate type")
     .populate("driver", "name")
     .populate("stops.store", "name")
@@ -217,7 +246,7 @@ export async function getStoreTrips(user) {
 export async function getOneStoreTrip(code, user) {
   if (!user.storeId) throw ApiError.forbidden("No store assigned");
 
-  const trip = await Trip.findOne({ code, "stops.store": user.storeId })
+  const trip = await Trip.findOne({ code, "stops.store": user.storeId, status: { $ne: "Draft" } })
     .populate("vehicle", "plate type")
     .populate("driver", "name")
     .populate("stops.store", "name")
