@@ -8,7 +8,7 @@ export const list = asyncHandler(async (req, res) => {
   const trips = await Trip.find()
     .populate("vehicle")
     .populate("stops.store")
-    .populate("bookings", "code")
+    .populate("bookings", "code requestedFor")
     .sort({ createdAt: -1 })
     .lean();
   res.json(trips);

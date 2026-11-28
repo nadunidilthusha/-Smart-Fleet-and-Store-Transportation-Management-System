@@ -7,8 +7,14 @@ import ApiError from "../../utils/ApiError.js";
 const pad = (n) => String(n).padStart(2, "0");
 const toLocalDateStr = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
-// Get the actual planned departure date/time for a trip from its bookings' requestedFor
-function getTripPlannedAt(trip) {
+// Strictly use Dispatch Date & Time (trip.scheduledAt),
+// falling back only to earliest booking.requestedFor for older trips (NEVER trip.createdAt)
+function getTripDispatchAt(trip) {
+  if (trip.scheduledAt) {
+    const d = new Date(trip.scheduledAt);
+    if (!Number.isNaN(d.getTime())) return d;
+  }
+
   const times = (trip.bookings ?? [])
     .map((b) => (b?.requestedFor ? new Date(b.requestedFor).getTime() : NaN))
     .filter((t) => !Number.isNaN(t));
@@ -16,7 +22,8 @@ function getTripPlannedAt(trip) {
   if (times.length > 0) {
     return new Date(Math.min(...times));
   }
-  return trip.createdAt ? new Date(trip.createdAt) : null;
+
+  return null;
 }
 
 export async function getScheduleData({ storeId, startDate, endDate }) {
@@ -45,7 +52,7 @@ export async function getScheduleData({ storeId, startDate, endDate }) {
       .populate("driver", "name")
       .populate("stops.store", "name shortName")
       .populate("bookings", "code requestedFor status")
-      .sort({ createdAt: 1 })
+      .sort({ scheduledAt: 1 })
       .lean(),
 
     Store.find(storeId ? { _id: storeId } : { status: { $ne: "Inactive" } })
@@ -61,18 +68,17 @@ export async function getScheduleData({ storeId, startDate, endDate }) {
           .lean(),
   ]);
 
-  // Filter trips by their actual planned date (booking.requestedFor) instead of createdAt
+  // Filter trips strictly by Dispatch Date (scheduledAt / booking.requestedFor), ignoring createdAt
   const trips = allTrips
     .map((trip) => {
-      const plannedAt = getTripPlannedAt(trip);
+      const dispatchAt = getTripDispatchAt(trip);
       return {
         ...trip,
-        plannedAt: plannedAt ? plannedAt.toISOString() : null,
-        plannedDate: plannedAt ? toLocalDateStr(plannedAt) : null,
+        plannedAt: dispatchAt ? dispatchAt.toISOString() : null,
+        plannedDate: dispatchAt ? toLocalDateStr(dispatchAt) : null,
       };
     })
     .filter((trip) => {
-      if (!startDate && !endDate) return true;
       if (!trip.plannedDate) return false;
       if (startDate && trip.plannedDate < startDate) return false;
       if (endDate && trip.plannedDate > endDate) return false;
