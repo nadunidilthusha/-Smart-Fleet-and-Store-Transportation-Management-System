@@ -9,20 +9,25 @@ const TripPlannerList = () => {
   const [trips, setTrips] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const tabs = ['All', 'Scheduled', 'In transit', 'Completed', 'Unallocated'];
+  const tabs = ['All', 'Scheduled', 'In transit', 'Completed'];
 
   const fetchTrips = () => {
     apiClient.get('/trips')
       .then(res => {
-        const formatted = res.data.map(trip => ({
-          id: trip.code,
-          origin: trip.stops?.[0]?.store?.name || 'Unknown Origin',
-          dest: trip.stops?.[trip.stops.length - 1]?.store?.name || 'Unknown Destination',
-          stops: trip.stops?.length || 0,
-          load: trip.load ? `${trip.load.toLocaleString()} units` : '-',
-          status: trip.status || 'Scheduled',
-          date: new Date(trip.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
-        }));
+        const formatted = res.data
+          .filter(trip => trip.status !== 'Unallocated')
+          .map(trip => ({
+            id: trip.code,
+            bookingCodes: (trip.bookings ?? [])
+              .map(b => (typeof b === 'string' ? b : b?.code))
+              .filter(Boolean),
+            origin: trip.stops?.[0]?.store?.name || 'Unknown Origin',
+            dest: trip.stops?.[trip.stops.length - 1]?.store?.name || 'Unknown Destination',
+            stops: trip.stops?.length || 0,
+            load: trip.load ? `${trip.load.toLocaleString()} units` : '-',
+            status: trip.status || 'Scheduled',
+            date: new Date(trip.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+          }));
         setTrips(formatted);
         setLoading(false);
       })
@@ -40,7 +45,7 @@ const TripPlannerList = () => {
   const handleStatusChange = async (tripId, newStatus) => {
     try {
       await apiClient.patch(`/trips/${tripId}`, { status: newStatus });
-      fetchTrips(); 
+      fetchTrips();
     } catch (err) {
       alert("Failed to update status");
     }
@@ -87,6 +92,7 @@ const TripPlannerList = () => {
             <thead className="bg-gray-50 text-gray-500 text-[13px]">
               <tr>
                 <th className="px-5 py-3 font-medium border-b border-gray-200">Trip ID</th>
+                <th className="px-5 py-3 font-medium border-b border-gray-200">Booking IDs</th>
                 <th className="px-5 py-3 font-medium border-b border-gray-200">Origin</th>
                 <th className="px-5 py-3 font-medium border-b border-gray-200">Final Destination</th>
                 <th className="px-5 py-3 font-medium border-b border-gray-200">Stops</th>
@@ -99,15 +105,33 @@ const TripPlannerList = () => {
               {filteredTrips.map(trip => (
                 <tr key={trip.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-5 py-3 font-medium text-gray-900">{trip.id}</td>
+                  <td className="px-5 py-3">
+                    {trip.bookingCodes.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5 max-w-[260px] whitespace-normal">
+                        {trip.bookingCodes.map(code => (
+                          <button
+                            key={code}
+                            type="button"
+                            onClick={() => navigate(`/bookings?booking=${encodeURIComponent(code)}`)}
+                            className="rounded bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 hover:bg-blue-50 hover:text-blue-700 border border-slate-200 transition-colors"
+                          >
+                            {code}
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )}
+                  </td>
                   <td className="px-5 py-3 text-gray-700">{trip.origin}</td>
                   <td className="px-5 py-3 text-gray-700">{trip.dest}</td>
                   <td className="px-5 py-3 text-gray-700">{trip.stops}</td>
                   <td className="px-5 py-3 text-gray-900 font-medium text-right">{trip.load}</td>
                   <td className="px-5 py-3 text-gray-700">{trip.date}</td>
-                  
+
                   <td className="px-5 py-3">
-                    <select 
-                      value={trip.status} 
+                    <select
+                      value={trip.status}
                       onChange={(e) => handleStatusChange(trip.id, e.target.value)}
                       className={`px-2 py-1 rounded text-[12px] font-bold border outline-none cursor-pointer ${
                         trip.status === 'Scheduled' ? 'bg-amber-50 text-amber-700 border-amber-200' :
@@ -125,7 +149,7 @@ const TripPlannerList = () => {
               ))}
               {filteredTrips.length === 0 && (
                 <tr>
-                  <td colSpan="7" className="px-5 py-8 text-center text-gray-500 text-sm">No trip plans found.</td>
+                  <td colSpan="8" className="px-5 py-8 text-center text-gray-500 text-sm">No trip plans found.</td>
                 </tr>
               )}
             </tbody>

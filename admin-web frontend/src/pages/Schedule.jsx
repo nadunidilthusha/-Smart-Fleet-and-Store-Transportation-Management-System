@@ -40,25 +40,49 @@ const Schedule = () => {
         if (!alive) return;
         const trips = res.data?.trips ?? [];
         const slots = res.data?.slots ?? [];
+        const allVehicles = res.data?.vehicles ?? [];
+        const allStores = res.data?.stores ?? [];
 
-        // 1. Map real Trips to Vehicle rows
+        // 1. Seed ALL vehicles from DB first so free vehicles are also visible
         const vehicleMap = {};
+        allVehicles.forEach((v) => {
+          const vId = v.plate || "Unknown";
+          vehicleMap[vId] = {
+            id: vId,
+            type: v.type || "Vehicle",
+            meta: v.status || "",
+            allocations: [],
+          };
+        });
+
+        // Map real Trips onto their actual planned date/time (plannedAt)
         trips.forEach((trip) => {
           if (!trip.vehicle) return;
           const vId = trip.vehicle.plate || "Unknown";
 
           if (!vehicleMap[vId]) {
-            vehicleMap[vId] = { id: vId, type: trip.vehicle.type || "Vehicle", allocations: [] };
+            vehicleMap[vId] = {
+              id: vId,
+              type: trip.vehicle.type || "Vehicle",
+              meta: trip.vehicle.status || "",
+              allocations: [],
+            };
           }
 
-          const created = trip.createdAt ? new Date(trip.createdAt) : null;
-          const rawTime = created ? `${pad(created.getHours())}:${pad(created.getMinutes())}` : "08:00";
+          const plannedDateObj = trip.plannedAt
+            ? new Date(trip.plannedAt)
+            : trip.createdAt
+            ? new Date(trip.createdAt)
+            : null;
+          const rawTime = plannedDateObj
+            ? `${pad(plannedDateObj.getHours())}:${pad(plannedDateObj.getMinutes())}`
+            : "08:00";
           const normalizedStatus = String(trip.status || "").toLowerCase();
 
           vehicleMap[vId].allocations.push({
             id: trip._id || trip.code,
             tripId: trip.code,
-            route: trip.route || trip.status,
+            route: `${rawTime} · ${trip.route || trip.status}`,
             exactTime: rawTime,
             startHour: toHourBucket(rawTime, hours),
             status:
@@ -71,12 +95,22 @@ const Schedule = () => {
         });
         setVehicleSchedules(Object.values(vehicleMap));
 
-        // 2. Map real Loading Slots to Store rows
+        // 2. Seed ALL active stores from DB first so stores with open slots are also visible
         const storeMap = {};
+        allStores.forEach((s) => {
+          const sId = s.name || "Unknown Store";
+          storeMap[sId] = {
+            id: sId,
+            type: s.shortName || "Location",
+            allocations: [],
+          };
+        });
+
+        // Map real Loading Slots onto Store rows
         slots.forEach((slot) => {
           const sId = slot.store?.name || "Unknown Store";
           if (!storeMap[sId]) {
-            storeMap[sId] = { id: sId, type: "Location", allocations: [] };
+            storeMap[sId] = { id: sId, type: slot.store?.shortName || "Location", allocations: [] };
           }
           storeMap[sId].allocations.push({
             id: slot._id || `${sId}-${slot.startTime}-${slot.booking?.code || ""}`,
@@ -284,7 +318,10 @@ const Schedule = () => {
                     <tr key={row.id} className="hover:bg-gray-50/50 transition-colors">
                       <td className="py-3 px-4 border-r border-gray-200 bg-white align-top">
                         <div className="font-semibold text-gray-900">{row.id}</div>
-                        <div className="text-xs text-gray-500">{row.type}</div>
+                        <div className="text-xs text-gray-500">
+                          {row.type}
+                          {row.meta ? ` · ${row.meta}` : ""}
+                        </div>
                       </td>
                       {hours.map((hour) => {
                         const matches = row.allocations.filter((a) => a.startHour === hour);
