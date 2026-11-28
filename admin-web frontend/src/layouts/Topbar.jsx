@@ -1,14 +1,53 @@
+import { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Bell, Search } from "lucide-react";
 import { getPageTitle } from "../utils/constants";
+import apiClient from "../api/apiClient";
 
 export default function Topbar() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
+  const [unreadCount, setUnreadCount] = useState(0);
 
   // The search text lives in the URL (?search=...) so pages can read it
   const query = params.get("search") ?? "";
+
+  const fetchUnreadCount = useCallback(async () => {
+    try {
+      const { data } = await apiClient.get("/notifications/unread-count");
+      setUnreadCount(Number(data?.unread ?? 0));
+    } catch (err) {
+      console.error("Failed to load unread notification count", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchUnreadCount();
+
+    const interval = setInterval(fetchUnreadCount, 15000);
+
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") fetchUnreadCount();
+    };
+
+    const handleNotificationsUpdated = (event) => {
+      if (typeof event.detail?.unread === "number") {
+        setUnreadCount(event.detail.unread);
+      } else {
+        fetchUnreadCount();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("admin-notifications-updated", handleNotificationsUpdated);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("admin-notifications-updated", handleNotificationsUpdated);
+    };
+  }, [fetchUnreadCount, pathname]);
 
   const handleChange = (event) => {
     const value = event.target.value;
@@ -53,12 +92,16 @@ export default function Topbar() {
 
       <button
         type="button"
-        aria-label="Notifications"
+        aria-label={unreadCount > 0 ? `Notifications (${unreadCount} unread)` : "Notifications"}
         onClick={() => navigate("/notifications")}
         className="relative grid h-9 w-9 place-items-center rounded-md text-mute hover:bg-slate-100"
       >
         <Bell size={17} strokeWidth={1.6} />
-        <span className="absolute right-2 top-2 h-2 w-2 rounded-full border-2 border-white bg-bad" />
+        {unreadCount > 0 && (
+          <span className="absolute right-1 top-1 grid h-[18px] min-w-[18px] place-items-center rounded-full border-2 border-white bg-bad px-1 text-[10px] font-bold leading-none text-white">
+            {unreadCount > 99 ? "99+" : unreadCount}
+          </span>
+        )}
       </button>
     </header>
   );

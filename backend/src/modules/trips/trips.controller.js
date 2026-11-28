@@ -5,7 +5,12 @@ import { notifyStore } from "../notifications/notifications.service.js";
 
 // GET /api/trips
 export const list = asyncHandler(async (req, res) => {
-  const trips = await Trip.find().populate("vehicle stops.store").sort({ createdAt: -1 }).lean();
+  const trips = await Trip.find()
+    .populate("vehicle")
+    .populate("stops.store")
+    .populate("bookings", "code")
+    .sort({ createdAt: -1 })
+    .lean();
   res.json(trips);
 });
 

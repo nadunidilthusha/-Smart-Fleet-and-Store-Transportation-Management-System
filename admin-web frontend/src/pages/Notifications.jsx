@@ -56,6 +56,13 @@ export default function Notifications() {
     load();
   }, [load]);
 
+  // Keep the Topbar bell badge in sync immediately when notifications load or change
+  useEffect(() => {
+    if (!items) return;
+    const count = items.filter((n) => !n.read).length;
+    window.dispatchEvent(new CustomEvent("admin-notifications-updated", { detail: { unread: count } }));
+  }, [items]);
+
   const list = items ?? [];
   const unread = list.filter((n) => !n.read).length;
 

@@ -1,39 +1,85 @@
 import LoadingSlot from "./schedule.model.js";
 import Trip from "../trips/trips.model.js";
 import Store from "../stores/stores.model.js";
+import Vehicle from "../vehicles/vehicles.model.js";
 import ApiError from "../../utils/ApiError.js";
 
+const pad = (n) => String(n).padStart(2, "0");
+const toLocalDateStr = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+// Get the actual planned departure date/time for a trip from its bookings' requestedFor
+function getTripPlannedAt(trip) {
+  const times = (trip.bookings ?? [])
+    .map((b) => (b?.requestedFor ? new Date(b.requestedFor).getTime() : NaN))
+    .filter((t) => !Number.isNaN(t));
+
+  if (times.length > 0) {
+    return new Date(Math.min(...times));
+  }
+  return trip.createdAt ? new Date(trip.createdAt) : null;
+}
+
 export async function getScheduleData({ storeId, startDate, endDate }) {
-  const filter = {};
-  if (storeId) filter.store = storeId;
+  const slotFilter = {};
+  if (storeId) slotFilter.store = storeId;
 
   if (startDate || endDate) {
-    filter.date = {};
-    if (startDate) filter.date.$gte = startDate;
-    if (endDate) filter.date.$lte = endDate;
+    slotFilter.date = {};
+    if (startDate) slotFilter.date.$gte = startDate;
+    if (endDate) slotFilter.date.$lte = endDate;
   }
 
-  const slots = await LoadingSlot.find(filter)
-    .populate("store", "name shortName")
-    .populate("booking", "code status")
-    .populate("trip", "code status")
-    .sort({ date: 1, startTime: 1 });
-
-  const tripFilter = {};
+  const tripFilter = { status: { $ne: "Unallocated" } };
   if (storeId) tripFilter["stops.store"] = storeId;
-  if (startDate || endDate) {
-    tripFilter.createdAt = {};
-    if (startDate) tripFilter.createdAt.$gte = new Date(startDate);
-    if (endDate) tripFilter.createdAt.$lte = new Date(new Date(endDate).setHours(23, 59, 59));
-  }
 
-  const trips = await Trip.find(tripFilter)
-    .populate("vehicle", "plate type")
-    .populate("driver", "name")
-    .populate("stops.store", "name shortName")
-    .sort({ createdAt: 1 });
+  const [slots, allTrips, stores, vehicles] = await Promise.all([
+    LoadingSlot.find(slotFilter)
+      .populate("store", "name shortName")
+      .populate("booking", "code status requestedFor")
+      .populate("trip", "code status")
+      .sort({ date: 1, startTime: 1 })
+      .lean(),
 
-  return { slots, trips };
+    Trip.find(tripFilter)
+      .populate("vehicle", "plate type status")
+      .populate("driver", "name")
+      .populate("stops.store", "name shortName")
+      .populate("bookings", "code requestedFor status")
+      .sort({ createdAt: 1 })
+      .lean(),
+
+    Store.find(storeId ? { _id: storeId } : { status: { $ne: "Inactive" } })
+      .select("name shortName status")
+      .sort({ name: 1 })
+      .lean(),
+
+    storeId
+      ? Promise.resolve([])
+      : Vehicle.find({ status: { $ne: "Inactive" } })
+          .select("plate type status capacity")
+          .sort({ plate: 1 })
+          .lean(),
+  ]);
+
+  // Filter trips by their actual planned date (booking.requestedFor) instead of createdAt
+  const trips = allTrips
+    .map((trip) => {
+      const plannedAt = getTripPlannedAt(trip);
+      return {
+        ...trip,
+        plannedAt: plannedAt ? plannedAt.toISOString() : null,
+        plannedDate: plannedAt ? toLocalDateStr(plannedAt) : null,
+      };
+    })
+    .filter((trip) => {
+      if (!startDate && !endDate) return true;
+      if (!trip.plannedDate) return false;
+      if (startDate && trip.plannedDate < startDate) return false;
+      if (endDate && trip.plannedDate > endDate) return false;
+      return true;
+    });
+
+  return { slots, trips, vehicles, stores };
 }
 
 // BE-6 & BE-7: Reserve a slot and detect conflicts
@@ -42,10 +88,9 @@ export async function reserveSlotForBooking({ storeId, requestedFor, bookingId }
   if (!store) throw ApiError.notFound("Store not found");
 
   const requestedDate = new Date(requestedFor);
-  const pad = (n) => String(n).padStart(2, "0");
 
   // Use local time components to prevent timezone shifting
-  const dateStr = `${requestedDate.getFullYear()}-${pad(requestedDate.getMonth() + 1)}-${pad(requestedDate.getDate())}`;
+  const dateStr = toLocalDateStr(requestedDate);
   const startTime = `${pad(requestedDate.getHours())}:${pad(requestedDate.getMinutes())}`;
 
   // Create a 1-hour window for the slot
@@ -63,6 +108,7 @@ export async function reserveSlotForBooking({ storeId, requestedFor, bookingId }
   const overlappingSlots = await LoadingSlot.countDocuments({
     store: storeId,
     date: dateStr,
+    status: "Reserved",
     $or: [{ startTime: { $lt: endTime }, endTime: { $gt: startTime } }],
   });
 
