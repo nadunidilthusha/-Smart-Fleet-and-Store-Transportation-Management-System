@@ -4,11 +4,21 @@ import apiClient from "../api/apiClient";
 const pad = (n) => String(n).padStart(2, "0");
 const toLocalDateStr = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
-// Snap any "HH:mm" time (e.g. "09:30") to its hour column ("09:00")
+// Snap any "HH:mm" time (e.g. "09:30") to its hour column, clamping within 06:00–19:00
 const toHourBucket = (timeStr, hours) => {
   if (!timeStr || typeof timeStr !== "string") return hours[0];
-  const hourOnly = `${timeStr.slice(0, 2)}:00`;
-  return hours.includes(hourOnly) ? hourOnly : hours[0];
+  const hr = parseInt(timeStr.slice(0, 2), 10);
+  if (Number.isNaN(hr)) return hours[0];
+  if (hr < 6) return hours[0];
+  if (hr > 19) return hours[hours.length - 1];
+  return `${pad(hr)}:00`;
+};
+
+const getTripStatusColor = (status) => {
+  const normalized = String(status || "").toLowerCase();
+  if (normalized === "completed") return "gray";
+  if (normalized === "in transit" || normalized === "delayed") return "green";
+  return "blue";
 };
 
 const Schedule = () => {
@@ -55,46 +65,6 @@ const Schedule = () => {
           };
         });
 
-        // Map real Trips onto their actual planned date/time (plannedAt)
-        trips.forEach((trip) => {
-          if (!trip.vehicle) return;
-          const vId = trip.vehicle.plate || "Unknown";
-
-          if (!vehicleMap[vId]) {
-            vehicleMap[vId] = {
-              id: vId,
-              type: trip.vehicle.type || "Vehicle",
-              meta: trip.vehicle.status || "",
-              allocations: [],
-            };
-          }
-
-          const plannedDateObj = trip.plannedAt
-            ? new Date(trip.plannedAt)
-            : trip.createdAt
-            ? new Date(trip.createdAt)
-            : null;
-          const rawTime = plannedDateObj
-            ? `${pad(plannedDateObj.getHours())}:${pad(plannedDateObj.getMinutes())}`
-            : "08:00";
-          const normalizedStatus = String(trip.status || "").toLowerCase();
-
-          vehicleMap[vId].allocations.push({
-            id: trip._id || trip.code,
-            tripId: trip.code,
-            route: `${rawTime} · ${trip.route || trip.status}`,
-            exactTime: rawTime,
-            startHour: toHourBucket(rawTime, hours),
-            status:
-              normalizedStatus === "completed"
-                ? "gray"
-                : normalizedStatus === "in transit" || normalizedStatus === "delayed"
-                ? "green"
-                : "blue",
-          });
-        });
-        setVehicleSchedules(Object.values(vehicleMap));
-
         // 2. Seed ALL active stores from DB first so stores with open slots are also visible
         const storeMap = {};
         allStores.forEach((s) => {
@@ -106,7 +76,68 @@ const Schedule = () => {
           };
         });
 
-        // Map real Loading Slots onto Store rows
+        // 3. Map Trips strictly using Dispatch Date & Time (scheduledAt / plannedAt) — never createdAt
+        trips.forEach((trip) => {
+          const dispatchRaw = trip.scheduledAt || trip.plannedAt;
+          if (!dispatchRaw) return;
+
+          const dispatchDateObj = new Date(dispatchRaw);
+          if (Number.isNaN(dispatchDateObj.getTime())) return;
+
+          const rawTime = `${pad(dispatchDateObj.getHours())}:${pad(dispatchDateObj.getMinutes())}`;
+          const startHour = toHourBucket(rawTime, hours);
+          const statusColor = getTripStatusColor(trip.status);
+
+          // 3a. Plot on Vehicle Schedules
+          if (trip.vehicle) {
+            const vId = trip.vehicle.plate || "Unknown";
+            if (!vehicleMap[vId]) {
+              vehicleMap[vId] = {
+                id: vId,
+                type: trip.vehicle.type || "Vehicle",
+                meta: trip.vehicle.status || "",
+                allocations: [],
+              };
+            }
+
+            vehicleMap[vId].allocations.push({
+              id: trip._id || trip.code,
+              tripId: trip.code,
+              route: `${rawTime} · ${trip.route || trip.status}`,
+              exactTime: rawTime,
+              startHour,
+              status: statusColor,
+            });
+          }
+
+          // 3b. Plot on every related Store in the trip's stop sequence
+          (trip.stops ?? []).forEach((stop, idx) => {
+            const sId = stop.store?.name;
+            if (!sId) return;
+
+            if (!storeMap[sId]) {
+              storeMap[sId] = {
+                id: sId,
+                type: stop.store?.shortName || "Location",
+                allocations: [],
+              };
+            }
+
+            const stopLabel = stop.type || (idx === 0 ? "Pickup" : "Delivery");
+            const vehiclePlate = trip.vehicle?.plate ? ` · ${trip.vehicle.plate}` : "";
+
+            storeMap[sId].allocations.push({
+              id: `trip-${trip._id || trip.code}-stop-${idx}`,
+              tripId: `${trip.code}${vehiclePlate}`,
+              route: `${rawTime} · ${stopLabel} (${trip.status})`,
+              exactTime: rawTime,
+              startHour,
+              status: statusColor,
+            });
+          });
+        });
+
+        // 4. Map Reserved Booking Loading Slots onto Store rows
         slots.forEach((slot) => {
           const sId = slot.store?.name || "Unknown Store";
           if (!storeMap[sId]) {
@@ -121,6 +152,8 @@ const Schedule = () => {
             status: slot.status === "Reserved" ? "blue" : slot.status === "Completed" ? "gray" : "green",
           });
         });
+
+        setVehicleSchedules(Object.values(vehicleMap));
         setStoreSlots(Object.values(storeMap));
       })
       .catch((err) => {
@@ -147,6 +180,12 @@ const Schedule = () => {
     const newDate = new Date(currentDateObj);
     newDate.setDate(newDate.getDate() + 1);
     setCurrentDateObj(newDate);
+  };
+
+  const handleDateInputChange = (e) => {
+    if (!e.target.value) return;
+    const [y, m, d] = e.target.value.split("-").map(Number);
+    setCurrentDateObj(new Date(y, m - 1, d));
   };
 
   const formattedDate = currentDateObj.toLocaleDateString("en-GB", {
@@ -197,7 +236,9 @@ const Schedule = () => {
         <div className="flex justify-between items-start mb-6">
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Schedules & Timelines</h1>
-            <p className="text-sm text-gray-500 mt-1">Monitor vehicle allocations and store loading slot reservations</p>
+            <p className="text-sm text-gray-500 mt-1">
+              Monitor dispatched vehicle schedules and store loading slot reservations
+            </p>
           </div>
 
           <div className="flex items-center gap-3 relative">
@@ -208,7 +249,16 @@ const Schedule = () => {
               >
                 &lt;
               </button>
-              <span className="px-4 py-1.5 text-sm font-medium text-gray-700">{formattedDate}</span>
+              <label className="relative px-4 py-1.5 text-sm font-medium text-gray-700 cursor-pointer hover:bg-gray-50">
+                <span>{formattedDate}</span>
+                <input
+                  type="date"
+                  value={toLocalDateStr(currentDateObj)}
+                  onChange={handleDateInputChange}
+                  aria-label="Select schedule date"
+                  className="absolute inset-0 opacity-0 cursor-pointer"
+                />
+              </label>
               <button
                 onClick={handleNextDay}
                 className="px-3 py-1.5 text-gray-500 hover:bg-gray-50 border-l border-gray-200 text-sm font-bold"
@@ -277,7 +327,7 @@ const Schedule = () => {
               </div>
               <div className="flex items-center gap-2">
                 <span className="w-3 h-3 rounded bg-blue-100 border border-blue-400"></span>
-                <span>Reserved</span>
+                <span>Scheduled / Reserved</span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="w-3 h-3 rounded bg-gray-100 border border-gray-300"></span>

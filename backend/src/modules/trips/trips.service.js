@@ -118,7 +118,7 @@ export async function releaseBookingFromTrips({ bookingId, session = null }) {
    ===================================================================== */
 
 export async function createTrip(payload) {
-  const { vehiclePlate, bookings, stops, load } = payload;
+  const { vehiclePlate, bookings, stops, load, scheduledAt } = payload;
 
   // 1. Find Vehicle
   const vehicle = await Vehicle.findOne({ plate: vehiclePlate });
@@ -145,6 +145,11 @@ export async function createTrip(payload) {
   // Generate Route string e.g. "Main Store → Ja-Ela"
   const routeString = stops.map((s) => s.storeName).join(" → ");
 
+  // Parse scheduledAt safely if provided
+  const parsedScheduledAt = scheduledAt ? new Date(scheduledAt) : null;
+  const validScheduledAt =
+    parsedScheduledAt && !Number.isNaN(parsedScheduledAt.getTime()) ? parsedScheduledAt : undefined;
+
   // 4. Generate Code
   const tripCount = await Trip.countDocuments();
   const code = `TR-${String(tripCount + 1).padStart(4, "0")}`;
@@ -158,6 +163,7 @@ export async function createTrip(payload) {
     bookings: bookingDocs.map((b) => b._id),
     stops: formattedStops,
     load: load,
+    scheduledAt: validScheduledAt,
     status: "Scheduled",
     nextStop: stops[0]?.storeName || "Stop 1",
   });
@@ -200,6 +206,7 @@ export async function getStoreTrips(user) {
   return trips.map((trip) => ({
     code: trip.code,
     status: trip.status,
+    scheduledAt: trip.scheduledAt || null,
     nextStop: trip.nextStop || "Calculating...",
     vehicle: trip.vehicle,
     stops: trip.stops,
